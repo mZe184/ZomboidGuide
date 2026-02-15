@@ -1,0 +1,206 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="ZomboidGuide.App"
+             xmlns:material="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:local="using:ZomboidGuide"
+             RequestedThemeVariant="Dark">
+    <Application.DataTemplates>
+        <local:ViewLocator/>
+    </Application.DataTemplates>
+
+    <Application.Resources>
+        <Color x:Key="PzBackgroundColor">#11130E</Color>
+        <Color x:Key="PzCardColor">#1B1E16</Color>
+        <Color x:Key="PzCardSecondaryColor">#23271B</Color>
+        <Color x:Key="PzBorderColor">#495336</Color>
+        <Color x:Key="PzAccentColor">#A0BC55</Color>
+        <Color x:Key="PzAccentMutedColor">#6E7E3C</Color>
+        <Color x:Key="PzTextColor">#F1F2EA</Color>
+        <Color x:Key="PzTextSubtleColor">#B4BAA4</Color>
+
+        <SolidColorBrush x:Key="PzBackgroundBrush" Color="{StaticResource PzBackgroundColor}"/>
+        <SolidColorBrush x:Key="PzCardBrush" Color="{StaticResource PzCardColor}"/>
+        <SolidColorBrush x:Key="PzCardSecondaryBrush" Color="{StaticResource PzCardSecondaryColor}"/>
+        <SolidColorBrush x:Key="PzBorderBrush" Color="{StaticResource PzBorderColor}"/>
+        <SolidColorBrush x:Key="PzAccentBrush" Color="{StaticResource PzAccentColor}"/>
+        <SolidColorBrush x:Key="PzAccentMutedBrush" Color="{StaticResource PzAccentMutedColor}"/>
+        <SolidColorBrush x:Key="PzTextBrush" Color="{StaticResource PzTextColor}"/>
+        <SolidColorBrush x:Key="PzTextSubtleBrush" Color="{StaticResource PzTextSubtleColor}"/>
+    </Application.Resources>
+
+    <Application.Styles>
+        <FluentTheme DensityStyle="Compact"/>
+        <material:MaterialIconStyles/>
+
+        <Style Selector="Window">
+            <Setter Property="Background" Value="{StaticResource PzBackgroundBrush}"/>
+            <Setter Property="Foreground" Value="{StaticResource PzTextBrush}"/>
+            <Setter Property="FontFamily" Value="Consolas, Cascadia Mono, Courier New"/>
+        </Style>
+
+        <Style Selector="Border.card">
+            <Setter Property="Background" Value="{StaticResource PzCardBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource PzBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="6"/>
+            <Setter Property="Padding" Value="10"/>
+        </Style>
+
+        <Style Selector="Border.item-card">
+            <Setter Property="Background" Value="{StaticResource PzCardSecondaryBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource PzBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="5"/>
+            <Setter Property="Padding" Value="9"/>
+            <Setter Property="Margin" Value="0,0,0,6"/>
+        </Style>
+
+        <Style Selector="ItemsControl.book-item-list ContentPresenter">
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+        </Style>
+
+        <Style Selector="ItemsControl.book-group-list ContentPresenter">
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+        </Style>
+
+        <Style Selector="ItemsControl.magazine-group-list ContentPresenter">
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+        </Style>
+
+        <Style Selector="Border.category-panel">
+            <Setter Property="Background" Value="{StaticResource PzCardSecondaryBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource PzBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Padding" Value="10"/>
+            <Setter Property="Margin" Value="0,0,0,12"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+        </Style>
+
+        <Style Selector="Expander.category-expander">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+        </Style>
+
+        <Style Selector="TextBlock.category-title">
+            <Setter Property="FontSize" Value="17"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Foreground" Value="{StaticResource PzAccentBrush}"/>
+        </Style>
+
+        <Style Selector="Border.category-count-pill">
+            <Setter Property="Background" Value="#334022"/>
+            <Setter Property="BorderBrush" Value="{StaticResource PzAccentMutedBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="999"/>
+            <Setter Property="Padding" Value="12,4"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="10,0,0,0"/>
+        </Style>
+
+        <Style Selector="TextBlock.category-count-text">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Foreground" Value="{StaticResource PzTextBrush}"/>
+        </Style>
+
+        <Style Selector="TextBlock.title">
+            <Setter Property="FontSize" Value="28"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Foreground" Value="{StaticResource PzAccentBrush}"/>
+        </Style>
+
+        <Style Selector="TextBlock.item-title">
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+        </Style>
+
+        <Style Selector="TextBlock.caption">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Foreground" Value="{StaticResource PzTextSubtleBrush}"/>
+        </Style>
+
+        <Style Selector="Border.state-badge">
+            <Setter Property="Padding" Value="8,2"/>
+            <Setter Property="CornerRadius" Value="999"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="HorizontalAlignment" Value="Right"/>
+            <Setter Property="Margin" Value="8,0,0,0"/>
+            <Setter Property="MinWidth" Value="74"/>
+        </Style>
+
+        <Style Selector="TextBlock.state-badge-text">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="HorizontalAlignment" Value="Center"/>
+            <Setter Property="TextAlignment" Value="Center"/>
+            <Setter Property="Foreground" Value="{StaticResource PzTextBrush}"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+
+        <Style Selector="Button">
+            <Setter Property="Background" Value="{StaticResource PzCardSecondaryBrush}"/>
+            <Setter Property="Foreground" Value="{StaticResource PzTextBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource PzBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="Padding" Value="10,6"/>
+        </Style>
+
+        <Style Selector="Button:pointerover">
+            <Setter Property="Background" Value="{StaticResource PzAccentMutedBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource PzAccentBrush}"/>
+        </Style>
+
+        <Style Selector="Button.link-button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Foreground" Value="{StaticResource PzAccentBrush}"/>
+        </Style>
+
+        <Style Selector="Button.link-button:pointerover">
+            <Setter Property="Foreground" Value="#D4E592"/>
+        </Style>
+
+        <Style Selector="TextBox">
+            <Setter Property="Background" Value="{StaticResource PzCardSecondaryBrush}"/>
+            <Setter Property="Foreground" Value="{StaticResource PzTextBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource PzBorderBrush}"/>
+            <Setter Property="SelectionBrush" Value="{StaticResource PzAccentBrush}"/>
+        </Style>
+
+        <Style Selector="TabControl">
+            <Setter Property="Background" Value="{StaticResource PzCardBrush}"/>
+        </Style>
+
+        <Style Selector="TabItem /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Padding" Value="10,6"/>
+        </Style>
+
+        <Style Selector="ComboBox.tab-filter">
+            <Setter Property="MinWidth" Value="150"/>
+            <Setter Property="Height" Value="28"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Background" Value="{StaticResource PzCardSecondaryBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource PzBorderBrush}"/>
+            <Setter Property="Foreground" Value="{StaticResource PzTextBrush}"/>
+        </Style>
+
+        <Style Selector="Expander">
+            <Setter Property="Background" Value="{StaticResource PzCardSecondaryBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource PzBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="5"/>
+            <Setter Property="Padding" Value="8"/>
+        </Style>
+
+        <Style Selector="CheckBox">
+            <Setter Property="Foreground" Value="{StaticResource PzTextBrush}"/>
+        </Style>
+    </Application.Styles>
+</Application>
