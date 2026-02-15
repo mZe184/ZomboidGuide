@@ -216,13 +216,6 @@
                     </StackPanel>
                 </Button>
 
-                <TextBox Grid.Row="1"
-                         Grid.Column="2"
-                         Grid.ColumnSpan="2"
-                         Margin="0,8,0,0"
-                         Watermark="{Binding UpdateFeedPathWatermarkText}"
-                         Text="{Binding UpdateFeedPath, Mode=TwoWay}"/>
-
                 <ToggleSwitch Grid.Row="2"
                               Margin="0,8,8,0"
                               OffContent="{Binding AutoUpdateOffText}"

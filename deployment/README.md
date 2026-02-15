@@ -76,3 +76,30 @@ Beispiel:
 git tag v1.0.1
 git push origin v1.0.1
 ```
+
+## 6) Auto-Tag + Push (Buildnummer automatisch erhoehen)
+
+Script:
+- `deployment/Build-Tag-Push.ps1`
+
+Was es macht:
+1. holt Tags von `origin`
+2. ermittelt den hoechsten `vX.Y.Z`-Tag
+3. erhoeht Patch um `+0.0.1`
+4. setzt `Version`, `AssemblyVersion`, `FileVersion` im `.csproj` auf die neue Version
+5. baut die Solution
+6. committed die Versionsaenderung (nur bei erfolgreichem Build)
+7. erstellt Tag nur bei erfolgreichem Build
+8. pusht Branch und Tag
+
+Beispiel:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\deployment\Build-Tag-Push.ps1
+```
+
+Dry-Run (ohne Tag/Push):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\deployment\Build-Tag-Push.ps1 -SkipBuild -DryRun
+```
