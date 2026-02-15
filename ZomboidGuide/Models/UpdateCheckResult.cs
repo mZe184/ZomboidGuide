@@ -16,6 +16,10 @@ public sealed class UpdateCheckResult
 
     public string PackagePath { get; init; } = string.Empty;
 
+    public string DownloadUrl { get; init; } = string.Empty;
+
+    public string DownloadFileName { get; init; } = string.Empty;
+
     public string ExeName { get; init; } = "ZomboidGuide.exe";
 
     public string Notes { get; init; } = string.Empty;

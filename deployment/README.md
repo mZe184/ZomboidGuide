@@ -51,7 +51,9 @@ Beispiel `manifest.json`:
 
 ## 4) In der App konfigurieren
 
-- Feld `Update-Pfad` setzen (Ordner mit `manifest.json`).
+- Feld `Update-Pfad` setzen:
+  - lokal: Ordner mit `manifest.json` oder direkter Pfad zur `manifest.json`
+  - GitHub: `owner/repo` (z. B. `MietzeMatze/ZomboidGuide-Releases`)
 - `Auto-Updatecheck` aktivieren.
 - `Nach Update suchen` klicken (oder beim Start automatisch pruefen).
 - Bei verfuegbarer neuer Version: `Update installieren`.

@@ -169,8 +169,8 @@ public partial class MainWindowViewModel : ViewModelBase
     public string ClearChecksButtonText => L("Clear All Checks", "Alle Haken entfernen");
 
     public string UpdateFeedPathWatermarkText => L(
-        "Update path (folder with manifest.json)",
-        "Update-Pfad (Ordner mit manifest.json)");
+        "Update source: local folder, manifest.json or GitHub repo (owner/repo)",
+        "Update-Quelle: lokaler Ordner, manifest.json oder GitHub-Repo (owner/repo)");
 
     public string AutoUpdateOffText => L("Auto Update Check Off", "Auto-Updatecheck aus");
 
@@ -377,7 +377,7 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             IsUpdateAvailable = false;
             _latestUpdateResult = null;
-            UpdateStatusMessage = L("No update path configured.", "Kein Update-Pfad gesetzt.");
+            UpdateStatusMessage = L("No update source configured.", "Keine Update-Quelle gesetzt.");
             return;
         }
 
