@@ -42,7 +42,6 @@ jobs:
         shell: pwsh
         env:
           RELEASE_TARGET_REPOSITORY: ${{ vars.RELEASE_TARGET_REPOSITORY }}
-          RELEASE_TARGET_COMMITISH: ${{ vars.RELEASE_TARGET_COMMITISH }}
           RELEASE_REPO_TOKEN: ${{ secrets.ZOMBOIDGUIDERELEASES }}
         run: |
           if ([string]::IsNullOrWhiteSpace($env:RELEASE_TARGET_REPOSITORY)) {
@@ -53,27 +52,27 @@ jobs:
             throw "Missing secret ZOMBOIDGUIDERELEASES (token with Contents: write on target repo)."
           }
 
-          $commitish = $env:RELEASE_TARGET_COMMITISH
-          if ([string]::IsNullOrWhiteSpace($commitish)) {
-            $headers = @{
-              Authorization = "Bearer $($env:RELEASE_REPO_TOKEN)"
-              Accept        = "application/vnd.github+json"
-              "User-Agent"  = "zomboidguide-release-workflow"
-            }
+          $headers = @{
+            Authorization = "Bearer $($env:RELEASE_REPO_TOKEN)"
+            Accept        = "application/vnd.github+json"
+            "User-Agent"  = "zomboidguide-release-workflow"
+          }
 
-            $repoApi = "https://api.github.com/repos/$($env:RELEASE_TARGET_REPOSITORY)"
-            $repoInfo = Invoke-RestMethod -Uri $repoApi -Headers $headers -Method Get
-            $commitish = $repoInfo.default_branch
+          $repoApi = "https://api.github.com/repos/$($env:RELEASE_TARGET_REPOSITORY)"
+          $repoInfo = Invoke-RestMethod -Uri $repoApi -Headers $headers -Method Get
+          if ($null -eq $repoInfo -or [string]::IsNullOrWhiteSpace($repoInfo.full_name)) {
+            throw "Could not access target repository metadata."
+          }
 
-            if ([string]::IsNullOrWhiteSpace($commitish)) {
-              throw "Could not resolve default branch from target repository API."
-            }
+          $branchesApi = "https://api.github.com/repos/$($env:RELEASE_TARGET_REPOSITORY)/branches?per_page=1"
+          $branches = Invoke-RestMethod -Uri $branchesApi -Headers $headers -Method Get
+          if ($null -eq $branches -or $branches.Count -lt 1) {
+            throw "Target repository has no commits/branches yet. Create an initial commit first."
           }
 
           "RELEASE_TARGET_REPOSITORY=$($env:RELEASE_TARGET_REPOSITORY)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "RELEASE_TARGET_COMMITISH=$commitish" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           Write-Host "Target repository: $($env:RELEASE_TARGET_REPOSITORY)"
-          Write-Host "Target commitish : $commitish"
+          Write-Host "Target repository check passed."
 
       - name: Restore
         run: dotnet restore ZomboidGuide.sln
@@ -113,7 +112,6 @@ jobs:
           token: ${{ secrets.ZOMBOIDGUIDERELEASES }}
           tag_name: ${{ env.APP_TAG }}
           name: ZomboidGuide ${{ env.APP_VERSION }}
-          target_commitish: ${{ env.RELEASE_TARGET_COMMITISH }}
           generate_release_notes: true
           files: |
             artifacts/release/*.zip
