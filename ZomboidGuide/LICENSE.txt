@@ -1,0 +1,55 @@
+﻿FREEWARE LICENSE (PROPRIETARY)
+
+Copyright (c) 2026 <Your Name / Company>
+All rights reserved.
+
+
+--------------------
+ENGLISH VERSION
+--------------------
+
+This software is provided free of charge.
+
+By installing or using this software, you agree to the following terms:
+
+1. Grant of Use
+You may use the software free of charge for personal or internal purposes only.
+
+2. No Modification
+You may not modify, decompile, reverse engineer, or create derivative works based on the software.
+
+3. No Redistribution
+You may not distribute, sublicense, or make the software publicly available without prior written permission from the copyright holder.
+
+4. No Warranty
+The software is provided "as is", without warranty of any kind.
+The copyright holder shall not be liable for any damages arising from its use.
+
+5. Termination
+This license automatically terminates if you violate any of these terms.
+
+
+
+--------------------
+DEUTSCHE VERSION
+--------------------
+
+Diese Software wird kostenlos zur Nutzung bereitgestellt.
+
+Durch Installation oder Nutzung der Software stimmst du den folgenden Bedingungen zu:
+
+1. Nutzungsrecht
+Du darfst die Software ausschließlich für private oder interne Zwecke kostenlos nutzen.
+
+2. Keine Modifikation
+Es ist untersagt, die Software zu verändern, zu dekompilieren, zurückzuentwickeln (Reverse Engineering) oder abgeleitete Werke zu erstellen.
+
+3. Keine Weiterverbreitung
+Die Software darf ohne ausdrückliche schriftliche Genehmigung des Rechteinhabers weder weitergegeben noch öffentlich bereitgestellt werden.
+
+4. Keine Gewährleistung
+Die Software wird „wie besehen“ ohne jegliche Gewährleistung bereitgestellt.
+Der Rechteinhaber haftet nicht für Schäden, die aus der Nutzung entstehen.
+
+5. Beendigung
+Bei Verstoß gegen diese Lizenz erlischt das Nutzungsrecht automatisch.
