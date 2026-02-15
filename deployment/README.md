@@ -76,7 +76,7 @@ Wichtig: Das Release wird **nicht** im Source-Repo erstellt, sondern in einem se
 
 2. Optional Repository Variable:
 - Name: `RELEASE_TARGET_COMMITISH`
-- Wert: Branch im Ziel-Repo, Standard ist `main`
+- Wert: Branch im Ziel-Repo (wenn leer, wird der Default-Branch des Ziel-Repos automatisch per API ermittelt)
 
 3. Repository Secret setzen:
 - Name: `ZOMBOIDGUIDERELEASES`

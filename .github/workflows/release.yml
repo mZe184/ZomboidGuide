@@ -55,7 +55,19 @@ jobs:
 
           $commitish = $env:RELEASE_TARGET_COMMITISH
           if ([string]::IsNullOrWhiteSpace($commitish)) {
-            $commitish = "main"
+            $headers = @{
+              Authorization = "Bearer $($env:RELEASE_REPO_TOKEN)"
+              Accept        = "application/vnd.github+json"
+              "User-Agent"  = "zomboidguide-release-workflow"
+            }
+
+            $repoApi = "https://api.github.com/repos/$($env:RELEASE_TARGET_REPOSITORY)"
+            $repoInfo = Invoke-RestMethod -Uri $repoApi -Headers $headers -Method Get
+            $commitish = $repoInfo.default_branch
+
+            if ([string]::IsNullOrWhiteSpace($commitish)) {
+              throw "Could not resolve default branch from target repository API."
+            }
           }
 
           "RELEASE_TARGET_REPOSITORY=$($env:RELEASE_TARGET_REPOSITORY)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
