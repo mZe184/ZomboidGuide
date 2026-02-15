@@ -43,7 +43,7 @@ jobs:
         env:
           RELEASE_TARGET_REPOSITORY: ${{ vars.RELEASE_TARGET_REPOSITORY }}
           RELEASE_TARGET_COMMITISH: ${{ vars.RELEASE_TARGET_COMMITISH }}
-          RELEASE_REPO_TOKEN: ${{ secrets.RELEASE_REPO_TOKEN }}
+          RELEASE_REPO_TOKEN: ${{ secrets.ZOMBOIDGUIDERELEASES }}
         run: |
           if ([string]::IsNullOrWhiteSpace($env:RELEASE_TARGET_REPOSITORY)) {
             throw "Missing repository variable RELEASE_TARGET_REPOSITORY (format: owner/repo)."
@@ -98,7 +98,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           repository: ${{ env.RELEASE_TARGET_REPOSITORY }}
-          token: ${{ secrets.RELEASE_REPO_TOKEN }}
+          token: ${{ secrets.ZOMBOIDGUIDERELEASES }}
           tag_name: ${{ env.APP_TAG }}
           name: ZomboidGuide ${{ env.APP_VERSION }}
           target_commitish: ${{ env.RELEASE_TARGET_COMMITISH }}
