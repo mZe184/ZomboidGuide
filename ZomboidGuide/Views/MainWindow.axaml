@@ -193,7 +193,7 @@
         <Border Grid.Row="1"
                 Classes="card"
                 Margin="0,10,0,0">
-            <Grid RowDefinitions="Auto,Auto,Auto,Auto"
+            <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto"
                   ColumnDefinitions="*,Auto,Auto,Auto">
                 <TextBox Grid.Row="0"
                          Grid.ColumnSpan="4"
@@ -243,21 +243,23 @@
                     </StackPanel>
                 </Button>
 
-                <TextBlock Grid.Row="2"
-                           Grid.Column="3"
+                <TextBlock Grid.Row="3"
+                           Grid.Column="1"
+                           Grid.ColumnSpan="3"
                            Margin="0,8,0,0"
                            VerticalAlignment="Center"
                            Classes="caption"
                            Text="{Binding UpdateStatusMessage}"/>
 
-                <TextBlock Grid.Row="3"
+                <TextBlock Grid.Row="4"
+                           Grid.Column="1"
                            Margin="0,8,8,0"
                            VerticalAlignment="Center"
                            Classes="caption"
                            Text="{Binding LanguageLabelText}"/>
 
-                <ComboBox Grid.Row="3"
-                          Grid.Column="1"
+                <ComboBox Grid.Row="4"
+                          Grid.Column="2"
                           Grid.ColumnSpan="2"
                           Margin="0,8,8,0"
                           ItemTemplate="{StaticResource LanguageOptionTemplate}"

@@ -2,6 +2,9 @@
     <PropertyGroup>
         <OutputType>WinExe</OutputType>
         <TargetFramework>net9.0</TargetFramework>
+        <Platforms>AnyCPU;x64</Platforms>
+        <UseAppHost>true</UseAppHost>
+        <PlatformTarget Condition="'$(Platform)' == 'x64'">x64</PlatformTarget>
         <Nullable>enable</Nullable>
         <Version>0.0.14</Version>
         <AssemblyVersion>0.0.14.0</AssemblyVersion>
@@ -30,5 +33,21 @@
         <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.1" />
         <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.2" />
     </ItemGroup>
+
+    <Target Name="RemoveStaleSelfContainedHostArtifacts"
+            BeforeTargets="Build"
+            Condition="'$(SelfContained)' != 'true' and ('$(RuntimeIdentifier)' == '' or '$(RuntimeIdentifier)' == 'win-x64')">
+        <ItemGroup>
+            <_StaleHostArtifacts Include="$(OutputPath)dotnet.exe" />
+            <_StaleHostArtifacts Include="$(OutputPath)dotnet.dll" />
+            <_StaleHostArtifacts Include="$(OutputPath)dotnet.runtimeconfig.json" />
+            <_StaleHostArtifacts Include="$(OutputPath)hostfxr.dll" />
+            <_StaleHostArtifacts Include="$(OutputPath)hostpolicy.dll" />
+            <_StaleHostArtifacts Include="$(OutputPath)coreclr.dll" />
+            <_StaleHostArtifacts Include="$(OutputPath)clrjit.dll" />
+            <_StaleHostArtifacts Include="$(OutputPath)createdump.exe" />
+        </ItemGroup>
+        <Delete Files="@(_StaleHostArtifacts)" TreatErrorsAsWarnings="true" />
+    </Target>
 
 </Project>

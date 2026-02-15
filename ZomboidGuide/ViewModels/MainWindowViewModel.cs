@@ -111,7 +111,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private string updateStatusMessage = "Update: not checked yet";
 
     [ObservableProperty]
-    private string releaseVersionText = "Release: -";
+    private string releaseVersionText = "Version: -";
 
     [ObservableProperty]
     private bool isUpdateAvailable;
@@ -177,7 +177,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public string InstallUpdateButtonText => L("Install Update", "Update installieren");
 
-    public string ReleaseVersionLabelText => L("Release", "Release");
+    public string ReleaseVersionLabelText => L("Version", "Version");
 
     public string BooksTabHeader => $"{L("Books", "Bücher")} ({BookProgress})";
 
@@ -374,7 +374,7 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             IsUpdateAvailable = false;
             _latestUpdateResult = null;
-            UpdateStatusMessage = result.Message;
+            UpdateStatusMessage = L("Update check failed.", "Update-Pruefung fehlgeschlagen.");
             UpdateReleaseVersionText();
             await SaveStateAsync();
             return;
@@ -390,15 +390,13 @@ public partial class MainWindowViewModel : ViewModelBase
         if (result.UpdateAvailable && result.AvailableVersion is not null)
         {
             UpdateStatusMessage = L(
-                $"GitHub release {result.AvailableVersion}: update available",
-                $"GitHub-Release {result.AvailableVersion}: Update verfuegbar");
+                $"Update available. Version: {result.AvailableVersion}",
+                $"Update verfuegbar. Version: {result.AvailableVersion}");
         }
         else
         {
             var release = result.AvailableVersion?.ToString() ?? _state.LastKnownReleaseVersion;
-            UpdateStatusMessage = string.IsNullOrWhiteSpace(release)
-                ? L("Already up to date.", "Bereits aktuell.")
-                : L($"GitHub release {release}: installed", $"GitHub-Release {release}: installiert");
+            UpdateStatusMessage = $"Version: {(string.IsNullOrWhiteSpace(release) ? "-" : release)}";
         }
 
         UpdateReleaseVersionText();
