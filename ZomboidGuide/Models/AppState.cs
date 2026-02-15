@@ -15,8 +15,6 @@ public sealed class AppState
 
     public bool AutoUpdateCheck { get; set; } = true;
 
-    public string UpdateFeedPath { get; set; } = "https://github.com/mZe184/ZomboidGuideReleases";
-
     public string BookStatusFilterKey { get; set; } = "all";
 
     public string MagazineStatusFilterKey { get; set; } = "all";
@@ -28,6 +26,8 @@ public sealed class AppState
     public DateTimeOffset? LastSessionSyncAt { get; set; }
 
     public DateTimeOffset? LastUpdateCheckAt { get; set; }
+
+    public string LastKnownReleaseVersion { get; set; } = string.Empty;
 
     public Dictionary<string, bool> CheckedItems { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 

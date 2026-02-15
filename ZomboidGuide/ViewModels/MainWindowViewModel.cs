@@ -105,13 +105,13 @@ public partial class MainWindowViewModel : ViewModelBase
     private bool autoUpdateCheck = true;
 
     [ObservableProperty]
-    private string updateFeedPath = DefaultGitHubUpdateRepository;
-
-    [ObservableProperty]
     private string statusMessage = "Loading data ...";
 
     [ObservableProperty]
     private string updateStatusMessage = "Update: not checked yet";
+
+    [ObservableProperty]
+    private string releaseVersionText = "Release: -";
 
     [ObservableProperty]
     private bool isUpdateAvailable;
@@ -176,6 +176,8 @@ public partial class MainWindowViewModel : ViewModelBase
     public string CheckUpdatesButtonText => L("Check For Update", "Nach Update suchen");
 
     public string InstallUpdateButtonText => L("Install Update", "Update installieren");
+
+    public string ReleaseVersionLabelText => L("Release", "Release");
 
     public string BooksTabHeader => $"{L("Books", "Bücher")} ({BookProgress})";
 
@@ -296,12 +298,6 @@ public partial class MainWindowViewModel : ViewModelBase
         _ = SaveStateAsync();
     }
 
-    partial void OnUpdateFeedPathChanged(string value)
-    {
-        _state.UpdateFeedPath = DefaultGitHubUpdateRepository;
-        _ = SaveStateAsync();
-    }
-
     partial void OnBookProgressChanged(string value)
     {
         OnPropertyChanged(nameof(BooksTabHeader));
@@ -373,28 +369,40 @@ public partial class MainWindowViewModel : ViewModelBase
         var currentVersion = GetCurrentAppVersion();
         var result = await Task.Run(() => _appUpdateService.CheckForUpdate(DefaultGitHubUpdateRepository, currentVersion));
         _state.LastUpdateCheckAt = DateTimeOffset.Now;
-        await SaveStateAsync();
 
         if (!result.Success)
         {
             IsUpdateAvailable = false;
             _latestUpdateResult = null;
             UpdateStatusMessage = result.Message;
+            UpdateReleaseVersionText();
+            await SaveStateAsync();
             return;
         }
 
         _latestUpdateResult = result;
         IsUpdateAvailable = result.UpdateAvailable;
+        if (result.AvailableVersion is not null)
+        {
+            _state.LastKnownReleaseVersion = result.AvailableVersion.ToString();
+        }
+
         if (result.UpdateAvailable && result.AvailableVersion is not null)
         {
             UpdateStatusMessage = L(
-                $"Update available: {result.AvailableVersion} (current {currentVersion})",
-                $"Update verfügbar: {result.AvailableVersion} (aktuell {currentVersion})");
+                $"GitHub release {result.AvailableVersion}: update available",
+                $"GitHub-Release {result.AvailableVersion}: Update verfuegbar");
         }
         else
         {
-            UpdateStatusMessage = L($"Already up to date ({currentVersion})", $"Bereits aktuell ({currentVersion})");
+            var release = result.AvailableVersion?.ToString() ?? _state.LastKnownReleaseVersion;
+            UpdateStatusMessage = string.IsNullOrWhiteSpace(release)
+                ? L("Already up to date.", "Bereits aktuell.")
+                : L($"GitHub release {release}: installed", $"GitHub-Release {release}: installiert");
         }
+
+        UpdateReleaseVersionText();
+        await SaveStateAsync();
     }
 
     [RelayCommand]
@@ -469,8 +477,6 @@ public partial class MainWindowViewModel : ViewModelBase
             IncludeMods = _state.IncludeMods;
             AutoSessionSync = _state.AutoSessionSync;
             AutoUpdateCheck = _state.AutoUpdateCheck;
-            _state.UpdateFeedPath = DefaultGitHubUpdateRepository;
-            UpdateFeedPath = DefaultGitHubUpdateRepository;
             GamePath = _state.GamePath ?? string.Empty;
             _state.LanguageCode = string.IsNullOrWhiteSpace(_state.LanguageCode)
                 ? "EN"
@@ -485,6 +491,7 @@ public partial class MainWindowViewModel : ViewModelBase
                 ? "all"
                 : _state.RecipeStatusFilterKey.ToLowerInvariant();
             ApplyUiLanguage();
+            UpdateReleaseVersionText();
 
             LastSyncText = _state.LastSyncAt.HasValue
                 ? L($"Last catalog sync: {_state.LastSyncAt:dd.MM.yyyy HH:mm}", $"Letzte Katalog-Sync: {_state.LastSyncAt:dd.MM.yyyy HH:mm}")
@@ -1277,6 +1284,7 @@ public partial class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(AutoUpdateOnText));
         OnPropertyChanged(nameof(CheckUpdatesButtonText));
         OnPropertyChanged(nameof(InstallUpdateButtonText));
+        OnPropertyChanged(nameof(ReleaseVersionLabelText));
         OnPropertyChanged(nameof(LanguageLabelText));
         OnPropertyChanged(nameof(BookFilterLabelText));
         OnPropertyChanged(nameof(MagazineFilterLabelText));
@@ -1285,6 +1293,7 @@ public partial class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(BooksTabHeader));
         OnPropertyChanged(nameof(MagazinesTabHeader));
         OnPropertyChanged(nameof(RecipesTabHeader));
+        UpdateReleaseVersionText();
     }
 
     private static StatusFilterOptionViewModel ResolveStatusFilterSelection(
@@ -1316,6 +1325,15 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             target.Add(option);
         }
+    }
+
+    private void UpdateReleaseVersionText()
+    {
+        var version = string.IsNullOrWhiteSpace(_state.LastKnownReleaseVersion)
+            ? "-"
+            : _state.LastKnownReleaseVersion;
+
+        ReleaseVersionText = $"{ReleaseVersionLabelText}: {version}";
     }
 
     private string L(string english, string german)
