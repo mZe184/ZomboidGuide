@@ -22,43 +22,27 @@ iscc /DMyAppVersion=1.0.0 /DSourceDir=".\artifacts\publish\app" /DOutputDir=".\a
 Ergebnis:
 - `artifacts\installer\ZomboidGuide-Setup-<Version>.exe`
 
-## 3) Update-Feed bereitstellen
+## 3) GitHub Releases bereitstellen
 
-Die App liest Updates aus einem Ordnerpfad (lokal oder Netzwerkpfad), z. B.:
-- `D:\ZomboidGuideUpdates`
-- `\\NAS\share\ZomboidGuideUpdates`
+Die App bezieht Updates jetzt ausschliesslich aus GitHub Releases.
+Als Quelle wird in der App ein Repository angegeben, z. B.:
+- `MietzeMatze/ZomboidGuide-Releases`
+- oder eine GitHub-URL auf dieses Repo
 
-Struktur:
-
-```text
-<UpdatePfad>\
-  manifest.json
-  package\
-    ZomboidGuide.exe
-    ...
-```
-
-Beispiel `manifest.json`:
-
-```json
-{
-  "version": "1.0.1",
-  "packagePath": "package",
-  "exeName": "ZomboidGuide.exe",
-  "notes": "Bugfixes"
-}
-```
+Die Release-Assets muessen ZIP-Dateien enthalten.
+Empfohlen ist das Asset:
+- `ZomboidGuide-<version>-win-x64.zip`
 
 ## 4) In der App konfigurieren
 
-- Feld `Update-Pfad` setzen:
-  - lokal: Ordner mit `manifest.json` oder direkter Pfad zur `manifest.json`
-  - GitHub: `owner/repo` (z. B. `MietzeMatze/ZomboidGuide-Releases`)
+- Feld `Update-Pfad` auf GitHub-Repo setzen:
+  - `owner/repo` (z. B. `MietzeMatze/ZomboidGuide-Releases`)
+  - alternativ GitHub-URL
 - `Auto-Updatecheck` aktivieren.
 - `Nach Update suchen` klicken (oder beim Start automatisch pruefen).
 - Bei verfuegbarer neuer Version: `Update installieren`.
 
-Die App beendet sich, kopiert die Dateien aus `package` ueber die Installation und startet neu.
+Die App laedt das ZIP aus GitHub, entpackt es, fuehrt das Update aus und startet neu.
 
 ## 5) Automatisches GitHub Release in separates Repo
 

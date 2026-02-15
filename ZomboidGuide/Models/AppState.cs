@@ -15,7 +15,7 @@ public sealed class AppState
 
     public bool AutoUpdateCheck { get; set; } = true;
 
-    public string UpdateFeedPath { get; set; } = string.Empty;
+    public string UpdateFeedPath { get; set; } = "https://github.com/mZe184/ZomboidGuideReleases";
 
     public string BookStatusFilterKey { get; set; } = "all";
 

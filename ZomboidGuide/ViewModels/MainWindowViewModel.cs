@@ -20,6 +20,7 @@ namespace ZomboidGuide.ViewModels;
 public partial class MainWindowViewModel : ViewModelBase
 {
     private const int CurrentInventoryDetectionVersion = 5;
+    private const string DefaultGitHubUpdateRepository = "https://github.com/mZe184/ZomboidGuideReleases";
 
     private readonly AppStateService _appStateService = new();
     private readonly GuideCatalogService _guideCatalogService = new();
@@ -169,8 +170,8 @@ public partial class MainWindowViewModel : ViewModelBase
     public string ClearChecksButtonText => L("Clear All Checks", "Alle Haken entfernen");
 
     public string UpdateFeedPathWatermarkText => L(
-        "Update source: local folder, manifest.json or GitHub repo (owner/repo)",
-        "Update-Quelle: lokaler Ordner, manifest.json oder GitHub-Repo (owner/repo)");
+        "GitHub repo for updates (owner/repo or github URL)",
+        "GitHub-Repo fuer Updates (owner/repo oder GitHub-URL)");
 
     public string AutoUpdateOffText => L("Auto Update Check Off", "Auto-Updatecheck aus");
 
@@ -377,7 +378,7 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             IsUpdateAvailable = false;
             _latestUpdateResult = null;
-            UpdateStatusMessage = L("No update source configured.", "Keine Update-Quelle gesetzt.");
+            UpdateStatusMessage = L("No GitHub repository configured.", "Kein GitHub-Repository gesetzt.");
             return;
         }
 
@@ -480,6 +481,11 @@ public partial class MainWindowViewModel : ViewModelBase
             IncludeMods = _state.IncludeMods;
             AutoSessionSync = _state.AutoSessionSync;
             AutoUpdateCheck = _state.AutoUpdateCheck;
+            if (string.IsNullOrWhiteSpace(_state.UpdateFeedPath))
+            {
+                _state.UpdateFeedPath = DefaultGitHubUpdateRepository;
+            }
+
             UpdateFeedPath = _state.UpdateFeedPath ?? string.Empty;
             GamePath = _state.GamePath ?? string.Empty;
             _state.LanguageCode = string.IsNullOrWhiteSpace(_state.LanguageCode)
@@ -517,7 +523,7 @@ public partial class MainWindowViewModel : ViewModelBase
             await ReloadDataAsync(preferGameFiles: !string.IsNullOrWhiteSpace(GamePath));
             ConfigureSessionWatcher();
             await TrySyncSessionOnStartupAsync();
-            if (AutoUpdateCheck && !string.IsNullOrWhiteSpace(UpdateFeedPath))
+            if (!string.IsNullOrWhiteSpace(UpdateFeedPath))
             {
                 await CheckUpdatesAsync();
             }
@@ -1410,6 +1416,26 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private static Version GetCurrentAppVersion()
     {
+        var processPath = Environment.ProcessPath;
+        if (!string.IsNullOrWhiteSpace(processPath) && File.Exists(processPath))
+        {
+            var fileVersion = FileVersionInfo.GetVersionInfo(processPath).FileVersion;
+            if (!string.IsNullOrWhiteSpace(fileVersion))
+            {
+                var cleanFileVersion = fileVersion.Split('+')[0];
+                var dashIndex = cleanFileVersion.IndexOf('-');
+                if (dashIndex >= 0)
+                {
+                    cleanFileVersion = cleanFileVersion[..dashIndex];
+                }
+
+                if (Version.TryParse(cleanFileVersion, out var parsedFileVersion))
+                {
+                    return parsedFileVersion;
+                }
+            }
+        }
+
         var assembly = Assembly.GetEntryAssembly() ?? Assembly.GetExecutingAssembly();
         var informational = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
         if (!string.IsNullOrWhiteSpace(informational))

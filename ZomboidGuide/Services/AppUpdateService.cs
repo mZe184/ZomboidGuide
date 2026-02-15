@@ -28,16 +28,21 @@ public sealed class AppUpdateService
             {
                 Success = false,
                 CurrentVersion = currentVersion,
-                Message = "Kein Update-Pfad oder GitHub-Repo gesetzt.",
+                Message = "Kein GitHub-Repository gesetzt.",
             };
         }
 
-        if (TryParseGitHubRepository(updateSource, out var owner, out var repository))
+        if (!TryParseGitHubRepository(updateSource, out var owner, out var repository))
         {
-            return CheckForGitHubUpdate(owner, repository, currentVersion);
+            return new UpdateCheckResult
+            {
+                Success = false,
+                CurrentVersion = currentVersion,
+                Message = "Ungueltiges GitHub-Repository. Format: owner/repo",
+            };
         }
 
-        return CheckForLocalManifestUpdate(updateSource, currentVersion);
+        return CheckForGitHubUpdate(owner, repository, currentVersion);
     }
 
     public bool TryStartUpdate(UpdateCheckResult updateResult, out string errorMessage)
@@ -49,13 +54,15 @@ public sealed class AppUpdateService
             return false;
         }
 
-        var packagePath = updateResult.PackagePath;
-        if (!string.IsNullOrWhiteSpace(updateResult.DownloadUrl))
+        if (string.IsNullOrWhiteSpace(updateResult.DownloadUrl))
         {
-            if (!TryPrepareDownloadedPackage(updateResult, out packagePath, out errorMessage))
-            {
-                return false;
-            }
+            errorMessage = "Kein Download-Link fuer das Update vorhanden.";
+            return false;
+        }
+
+        if (!TryPrepareDownloadedPackage(updateResult, out var packagePath, out errorMessage))
+        {
+            return false;
         }
 
         if (!Directory.Exists(packagePath))
@@ -116,80 +123,6 @@ public sealed class AppUpdateService
             errorMessage = $"Updater konnte nicht gestartet werden: {exception.Message}";
             return false;
         }
-    }
-
-    private static UpdateCheckResult CheckForLocalManifestUpdate(string updateFeedPath, Version currentVersion)
-    {
-        var manifestPath = ResolveManifestPath(updateFeedPath);
-        if (!File.Exists(manifestPath))
-        {
-            return new UpdateCheckResult
-            {
-                Success = false,
-                CurrentVersion = currentVersion,
-                Message = $"Update-Manifest nicht gefunden: {manifestPath}",
-            };
-        }
-
-        UpdateManifest manifest;
-        try
-        {
-            var manifestJson = File.ReadAllText(manifestPath, Encoding.UTF8);
-            manifest = JsonSerializer.Deserialize<UpdateManifest>(manifestJson, JsonOptions) ?? new UpdateManifest();
-        }
-        catch (Exception exception)
-        {
-            return new UpdateCheckResult
-            {
-                Success = false,
-                CurrentVersion = currentVersion,
-                Message = $"Manifest konnte nicht gelesen werden: {exception.Message}",
-            };
-        }
-
-        if (!TryParseVersion(manifest.Version, out var availableVersion))
-        {
-            return new UpdateCheckResult
-            {
-                Success = false,
-                CurrentVersion = currentVersion,
-                Message = $"Ungueltige Manifest-Version: {manifest.Version}",
-            };
-        }
-
-        var manifestDirectory = Path.GetDirectoryName(manifestPath) ?? updateFeedPath;
-        var packagePath = string.IsNullOrWhiteSpace(manifest.PackagePath) ? "package" : manifest.PackagePath;
-        if (!Path.IsPathRooted(packagePath))
-        {
-            packagePath = Path.GetFullPath(Path.Combine(manifestDirectory, packagePath));
-        }
-
-        if (!Directory.Exists(packagePath))
-        {
-            return new UpdateCheckResult
-            {
-                Success = false,
-                CurrentVersion = currentVersion,
-                Message = $"Update-Paketordner nicht gefunden: {packagePath}",
-            };
-        }
-
-        var exeName = string.IsNullOrWhiteSpace(manifest.ExeName) ? "ZomboidGuide.exe" : manifest.ExeName.Trim();
-        var hasNewerVersion = availableVersion > currentVersion;
-
-        return new UpdateCheckResult
-        {
-            Success = true,
-            UpdateAvailable = hasNewerVersion,
-            CurrentVersion = currentVersion,
-            AvailableVersion = availableVersion,
-            PackagePath = packagePath,
-            ExeName = exeName,
-            Notes = manifest.Notes ?? string.Empty,
-            Message = hasNewerVersion
-                ? $"Update verfuegbar: {availableVersion}"
-                : $"Bereits aktuell ({currentVersion})",
-        };
     }
 
     private static UpdateCheckResult CheckForGitHubUpdate(string owner, string repository, Version currentVersion)
@@ -429,16 +362,6 @@ public sealed class AppUpdateService
         }
 
         return false;
-    }
-
-    private static string ResolveManifestPath(string updateFeedPath)
-    {
-        if (updateFeedPath.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
-        {
-            return Path.GetFullPath(updateFeedPath);
-        }
-
-        return Path.GetFullPath(Path.Combine(updateFeedPath, "manifest.json"));
     }
 
     private static bool TryParseVersion(string rawVersion, out Version version)
