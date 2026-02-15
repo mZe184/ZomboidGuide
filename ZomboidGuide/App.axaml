@@ -191,6 +191,21 @@
             <Setter Property="Foreground" Value="{StaticResource PzTextBrush}"/>
         </Style>
 
+        <Style Selector="Border.language-chip">
+            <Setter Property="Background" Value="{StaticResource PzCardSecondaryBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource PzBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="Padding" Value="0"/>
+        </Style>
+
+        <Style Selector="ComboBox.language-inline">
+            <Setter Property="Height" Value="28"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{StaticResource PzTextBrush}"/>
+        </Style>
+
         <Style Selector="Expander">
             <Setter Property="Background" Value="{StaticResource PzCardSecondaryBrush}"/>
             <Setter Property="BorderBrush" Value="{StaticResource PzBorderBrush}"/>

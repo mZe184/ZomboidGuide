@@ -125,32 +125,41 @@
           RowDefinitions="Auto,Auto,*,Auto">
         <Border Classes="card">
             <Grid RowDefinitions="Auto,Auto"
-                  ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto">
-                <StackPanel Grid.ColumnSpan="6"
-                            Spacing="4">
+                  ColumnDefinitions="Auto,*,Auto,Auto,Auto">
+                <Image Grid.RowSpan="2"
+                       Grid.Column="0"
+                       Width="200"
+                       Height="147"
+                       Margin="0,0,14,0"
+                       Source="/Images/ZG_Logo.png"
+                       Stretch="Uniform"
+                       VerticalAlignment="Stretch"/>
+
+                <StackPanel Grid.Column="1"
+                            Spacing="4"
+                            VerticalAlignment="Center">
                     <TextBlock Classes="title"
                                Text="{Binding HeaderTitleText}"/>
                     <TextBlock Classes="caption"
                                Text="{Binding HeaderSubtitleText}"/>
                 </StackPanel>
 
-                <TextBox Grid.Row="1"
-                         Width="560"
-                         Margin="0,6,8,0"
+                <TextBox Grid.Row="0"
+                         Grid.Column="2"
+                         Grid.ColumnSpan="2"
+                         Width="440"
+                         Height="32"
+                         HorizontalAlignment="Right"
+                         VerticalAlignment="Top"
+                         Margin="12,0,0,6"
+                         TextWrapping="NoWrap"
                          Watermark="{Binding GamePathWatermarkText}"
                          Text="{Binding GamePath, Mode=TwoWay}"/>
 
-                <ToggleSwitch Grid.Row="1"
-                              Grid.Column="1"
-                              Margin="0,6,8,0"
-                              VerticalAlignment="Center"
-                              OffContent="{Binding ModsOffText}"
-                              OnContent="{Binding ModsOnText}"
-                              IsChecked="{Binding IncludeMods, Mode=TwoWay}"/>
-
-                <Button Grid.Row="1"
-                        Grid.Column="2"
-                        Margin="0,6,8,0"
+                <Button Grid.Row="0"
+                        Grid.Column="4"
+                        Margin="8,0,0,6"
+                        VerticalAlignment="Top"
                         Command="{Binding AutoDetectPathCommand}">
                     <StackPanel Orientation="Horizontal" Spacing="6">
                         <material:MaterialIcon Kind="MapSearch" Width="16" Height="16"/>
@@ -158,28 +167,16 @@
                     </StackPanel>
                 </Button>
 
-                <Button Grid.Row="1"
-                        Grid.Column="3"
-                        Margin="0,6,8,0"
-                        Command="{Binding RefreshFromGameCommand}">
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                        <material:MaterialIcon Kind="Refresh" Width="16" Height="16"/>
-                        <TextBlock Text="{Binding LoadFromGameButtonText}"/>
-                    </StackPanel>
-                </Button>
+                <ToggleSwitch Grid.Row="1"
+                              Grid.Column="2"
+                              Margin="0,6,8,0"
+                              VerticalAlignment="Center"
+                              OffContent="{Binding ModsOffText}"
+                              OnContent="{Binding ModsOnText}"
+                              IsChecked="{Binding IncludeMods, Mode=TwoWay}"/>
 
                 <Button Grid.Row="1"
                         Grid.Column="4"
-                        Margin="0,6,8,0"
-                        Command="{Binding LoadDefaultsCommand}">
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                        <material:MaterialIcon Kind="Database" Width="16" Height="16"/>
-                        <TextBlock Text="{Binding LoadFallbackButtonText}"/>
-                    </StackPanel>
-                </Button>
-
-                <Button Grid.Row="1"
-                        Grid.Column="5"
                         Margin="0,6,0,0"
                         Command="{Binding SyncActiveSessionCommand}">
                     <StackPanel Orientation="Horizontal" Spacing="6">
@@ -251,20 +248,29 @@
                            Classes="caption"
                            Text="{Binding UpdateStatusMessage}"/>
 
-                <TextBlock Grid.Row="4"
-                           Grid.Column="1"
-                           Margin="0,8,8,0"
-                           VerticalAlignment="Center"
-                           Classes="caption"
-                           Text="{Binding LanguageLabelText}"/>
-
-                <ComboBox Grid.Row="4"
-                          Grid.Column="2"
-                          Grid.ColumnSpan="2"
-                          Margin="0,8,8,0"
-                          ItemTemplate="{StaticResource LanguageOptionTemplate}"
-                          ItemsSource="{Binding AvailableLanguages}"
-                          SelectedItem="{Binding SelectedLanguage, Mode=TwoWay}"/>
+                <Border Grid.Row="4"
+                        Grid.Column="1"
+                        Grid.ColumnSpan="3"
+                        Margin="0,8,0,0"
+                        Classes="language-chip">
+                    <Grid ColumnDefinitions="Auto,Auto,*">
+                        <TextBlock Margin="10,0,6,0"
+                                   VerticalAlignment="Center"
+                                   Text="{Binding LanguageLabelText}"/>
+                        <TextBlock Grid.Column="1"
+                                   VerticalAlignment="Center"
+                                   Classes="caption"
+                                   Text="|"/>
+                        <ComboBox Grid.Column="2"
+                                  Width="220"
+                                  Margin="8,0,8,0"
+                                  VerticalAlignment="Center"
+                                  Classes="language-inline"
+                                  ItemTemplate="{StaticResource LanguageOptionTemplate}"
+                                  ItemsSource="{Binding AvailableLanguages}"
+                                  SelectedItem="{Binding SelectedLanguage, Mode=TwoWay}"/>
+                    </Grid>
+                </Border>
             </Grid>
         </Border>
 
