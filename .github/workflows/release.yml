@@ -1,0 +1,108 @@
+name: Build and Publish Binary Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+
+      - name: Resolve Version
+        shell: pwsh
+        run: |
+          $raw = "${{ github.ref_name }}"
+          if ([string]::IsNullOrWhiteSpace($raw)) {
+            throw "github.ref_name is empty."
+          }
+
+          $version = if ($raw.StartsWith("v")) { $raw.Substring(1) } else { $raw }
+          "APP_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "APP_TAG=$raw" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "Release version: $version (tag: $raw)"
+
+      - name: Validate Release Target
+        shell: pwsh
+        env:
+          RELEASE_TARGET_REPOSITORY: ${{ vars.RELEASE_TARGET_REPOSITORY }}
+          RELEASE_TARGET_COMMITISH: ${{ vars.RELEASE_TARGET_COMMITISH }}
+          RELEASE_REPO_TOKEN: ${{ secrets.RELEASE_REPO_TOKEN }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:RELEASE_TARGET_REPOSITORY)) {
+            throw "Missing repository variable RELEASE_TARGET_REPOSITORY (format: owner/repo)."
+          }
+
+          if ([string]::IsNullOrWhiteSpace($env:RELEASE_REPO_TOKEN)) {
+            throw "Missing secret RELEASE_REPO_TOKEN (token with Contents: write on target repo)."
+          }
+
+          $commitish = $env:RELEASE_TARGET_COMMITISH
+          if ([string]::IsNullOrWhiteSpace($commitish)) {
+            $commitish = "main"
+          }
+
+          "RELEASE_TARGET_REPOSITORY=$($env:RELEASE_TARGET_REPOSITORY)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "RELEASE_TARGET_COMMITISH=$commitish" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "Target repository: $($env:RELEASE_TARGET_REPOSITORY)"
+          Write-Host "Target commitish : $commitish"
+
+      - name: Restore
+        run: dotnet restore ZomboidGuide.sln
+
+      - name: Build
+        run: dotnet build ZomboidGuide.sln -c Release --no-restore
+
+      - name: Publish App + Update Feed
+        shell: pwsh
+        run: |
+          ./deployment/Build-Release.ps1 -Runtime "win-x64" -Configuration "Release" -Version "${env:APP_VERSION}"
+
+      - name: Pack Release Artifacts
+        shell: pwsh
+        run: |
+          $releaseDir = "artifacts/release"
+          New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
+
+          $appZip = Join-Path $releaseDir ("ZomboidGuide-{0}-win-x64.zip" -f $env:APP_VERSION)
+          $feedZip = Join-Path $releaseDir ("ZomboidGuide-{0}-update-feed.zip" -f $env:APP_VERSION)
+
+          if (Test-Path $appZip) { Remove-Item $appZip -Force }
+          if (Test-Path $feedZip) { Remove-Item $feedZip -Force }
+
+          Compress-Archive -Path "artifacts/publish/app/*" -DestinationPath $appZip -CompressionLevel Optimal
+          Compress-Archive -Path "artifacts/update-feed/*" -DestinationPath $feedZip -CompressionLevel Optimal
+
+          $hashLines = @()
+          $hashLines += ("{0}  {1}" -f (Get-FileHash $appZip -Algorithm SHA256).Hash.ToLowerInvariant(), [System.IO.Path]::GetFileName($appZip))
+          $hashLines += ("{0}  {1}" -f (Get-FileHash $feedZip -Algorithm SHA256).Hash.ToLowerInvariant(), [System.IO.Path]::GetFileName($feedZip))
+          $hashLines | Set-Content -Path (Join-Path $releaseDir "SHA256SUMS.txt") -Encoding utf8
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          repository: ${{ env.RELEASE_TARGET_REPOSITORY }}
+          token: ${{ secrets.RELEASE_REPO_TOKEN }}
+          tag_name: ${{ env.APP_TAG }}
+          name: ZomboidGuide ${{ env.APP_VERSION }}
+          target_commitish: ${{ env.RELEASE_TARGET_COMMITISH }}
+          generate_release_notes: true
+          files: |
+            artifacts/release/*.zip
+            artifacts/release/SHA256SUMS.txt
