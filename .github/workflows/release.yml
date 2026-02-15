@@ -50,7 +50,7 @@ jobs:
           }
 
           if ([string]::IsNullOrWhiteSpace($env:RELEASE_REPO_TOKEN)) {
-            throw "Missing secret RELEASE_REPO_TOKEN (token with Contents: write on target repo)."
+            throw "Missing secret ZOMBOIDGUIDERELEASES (token with Contents: write on target repo)."
           }
 
           $commitish = $env:RELEASE_TARGET_COMMITISH
