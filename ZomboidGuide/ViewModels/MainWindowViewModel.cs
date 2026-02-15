@@ -105,7 +105,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private bool autoUpdateCheck = true;
 
     [ObservableProperty]
-    private string updateFeedPath = string.Empty;
+    private string updateFeedPath = DefaultGitHubUpdateRepository;
 
     [ObservableProperty]
     private string statusMessage = "Loading data ...";
@@ -168,10 +168,6 @@ public partial class MainWindowViewModel : ViewModelBase
     public string AutoSessionSyncOnText => L("Auto Session Sync On", "Auto-Session-Sync an");
 
     public string ClearChecksButtonText => L("Clear All Checks", "Alle Haken entfernen");
-
-    public string UpdateFeedPathWatermarkText => L(
-        "GitHub repo for updates (owner/repo or github URL)",
-        "GitHub-Repo fuer Updates (owner/repo oder GitHub-URL)");
 
     public string AutoUpdateOffText => L("Auto Update Check Off", "Auto-Updatecheck aus");
 
@@ -302,7 +298,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
     partial void OnUpdateFeedPathChanged(string value)
     {
-        _state.UpdateFeedPath = value;
+        _state.UpdateFeedPath = DefaultGitHubUpdateRepository;
         _ = SaveStateAsync();
     }
 
@@ -374,16 +370,8 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     private async Task CheckUpdatesAsync()
     {
-        if (string.IsNullOrWhiteSpace(UpdateFeedPath))
-        {
-            IsUpdateAvailable = false;
-            _latestUpdateResult = null;
-            UpdateStatusMessage = L("No GitHub repository configured.", "Kein GitHub-Repository gesetzt.");
-            return;
-        }
-
         var currentVersion = GetCurrentAppVersion();
-        var result = await Task.Run(() => _appUpdateService.CheckForUpdate(UpdateFeedPath, currentVersion));
+        var result = await Task.Run(() => _appUpdateService.CheckForUpdate(DefaultGitHubUpdateRepository, currentVersion));
         _state.LastUpdateCheckAt = DateTimeOffset.Now;
         await SaveStateAsync();
 
@@ -481,12 +469,8 @@ public partial class MainWindowViewModel : ViewModelBase
             IncludeMods = _state.IncludeMods;
             AutoSessionSync = _state.AutoSessionSync;
             AutoUpdateCheck = _state.AutoUpdateCheck;
-            if (string.IsNullOrWhiteSpace(_state.UpdateFeedPath))
-            {
-                _state.UpdateFeedPath = DefaultGitHubUpdateRepository;
-            }
-
-            UpdateFeedPath = _state.UpdateFeedPath ?? string.Empty;
+            _state.UpdateFeedPath = DefaultGitHubUpdateRepository;
+            UpdateFeedPath = DefaultGitHubUpdateRepository;
             GamePath = _state.GamePath ?? string.Empty;
             _state.LanguageCode = string.IsNullOrWhiteSpace(_state.LanguageCode)
                 ? "EN"
@@ -523,10 +507,7 @@ public partial class MainWindowViewModel : ViewModelBase
             await ReloadDataAsync(preferGameFiles: !string.IsNullOrWhiteSpace(GamePath));
             ConfigureSessionWatcher();
             await TrySyncSessionOnStartupAsync();
-            if (!string.IsNullOrWhiteSpace(UpdateFeedPath))
-            {
-                await CheckUpdatesAsync();
-            }
+            await CheckUpdatesAsync();
         }
         finally
         {
@@ -1292,7 +1273,6 @@ public partial class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(AutoSessionSyncOffText));
         OnPropertyChanged(nameof(AutoSessionSyncOnText));
         OnPropertyChanged(nameof(ClearChecksButtonText));
-        OnPropertyChanged(nameof(UpdateFeedPathWatermarkText));
         OnPropertyChanged(nameof(AutoUpdateOffText));
         OnPropertyChanged(nameof(AutoUpdateOnText));
         OnPropertyChanged(nameof(CheckUpdatesButtonText));
