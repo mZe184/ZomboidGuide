@@ -9,7 +9,9 @@
         d:DesignHeight="900"
         x:Class="ZomboidGuide.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
-        Icon="/Assets/avalonia-logo.ico"
+        Icon="/Images/ZGSmallIcon.ico"
+        MinWidth="1680"
+        MinHeight="1020"
         Title="MietzeMatze's Zomboid Guide">
     <Design.DataContext>
         <vm:MainWindowViewModel/>
@@ -125,7 +127,7 @@
           RowDefinitions="Auto,Auto,*,Auto">
         <Border Classes="card">
             <Grid RowDefinitions="Auto,Auto"
-                  ColumnDefinitions="Auto,*,Auto,Auto,Auto">
+                  ColumnDefinitions="214,*,Auto,300">
                 <Image Grid.RowSpan="2"
                        Grid.Column="0"
                        Width="200"
@@ -146,7 +148,7 @@
 
                 <TextBox Grid.Row="0"
                          Grid.Column="2"
-                         Grid.ColumnSpan="2"
+                         Grid.ColumnSpan="1"
                          Width="440"
                          Height="32"
                          HorizontalAlignment="Right"
@@ -157,8 +159,11 @@
                          Text="{Binding GamePath, Mode=TwoWay}"/>
 
                 <Button Grid.Row="0"
-                        Grid.Column="4"
-                        Margin="8,0,0,6"
+                        Grid.Column="3"
+                        Margin="12,0,0,6"
+                        HorizontalAlignment="Right"
+                        MaxWidth="300"
+                        MinWidth="300"
                         VerticalAlignment="Top"
                         Command="{Binding AutoDetectPathCommand}">
                     <StackPanel Orientation="Horizontal" Spacing="6">
@@ -169,15 +174,19 @@
 
                 <ToggleSwitch Grid.Row="1"
                               Grid.Column="2"
-                              Margin="0,6,8,0"
+                              Margin="0,6,0,0"
+                              HorizontalAlignment="Right"
                               VerticalAlignment="Center"
                               OffContent="{Binding ModsOffText}"
                               OnContent="{Binding ModsOnText}"
                               IsChecked="{Binding IncludeMods, Mode=TwoWay}"/>
 
                 <Button Grid.Row="1"
-                        Grid.Column="4"
+                        Grid.Column="3"
                         Margin="0,6,0,0"
+                        HorizontalAlignment="Right"
+                        MaxWidth="300"
+                        MinWidth="300"
                         Command="{Binding SyncActiveSessionCommand}">
                     <StackPanel Orientation="Horizontal" Spacing="6">
                         <material:MaterialIcon Kind="Sync" Width="16" Height="16"/>
@@ -191,7 +200,7 @@
                 Classes="card"
                 Margin="0,10,0,0">
             <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto"
-                  ColumnDefinitions="*,Auto,Auto,Auto">
+                  ColumnDefinitions="*,*,Auto,Auto">
                 <TextBox Grid.Row="0"
                          Grid.ColumnSpan="4"
                          Watermark="{Binding SearchWatermarkText}"
@@ -205,7 +214,10 @@
 
                 <Button Grid.Row="1"
                         Grid.Column="1"
-                        Margin="0,8,8,0"
+                        Margin="0,8,0,0"
+                        HorizontalAlignment="Right"
+                        MaxWidth="300"
+                        MinWidth="300"
                         Command="{Binding UncheckAllCommand}">
                     <StackPanel Orientation="Horizontal" Spacing="6">
                         <material:MaterialIcon Kind="Broom" Width="16" Height="16"/>
@@ -221,7 +233,10 @@
 
                 <Button Grid.Row="2"
                         Grid.Column="1"
-                        Margin="0,8,8,0"
+                        Margin="0,8,0,0"
+                        HorizontalAlignment="Right"
+                        MaxWidth="300"
+                        MinWidth="300"
                         Command="{Binding CheckUpdatesCommand}">
                     <StackPanel Orientation="Horizontal" Spacing="6">
                         <material:MaterialIcon Kind="Update" Width="16" Height="16"/>
@@ -245,13 +260,20 @@
                            Grid.ColumnSpan="3"
                            Margin="0,8,0,0"
                            VerticalAlignment="Center"
+                           HorizontalAlignment="Right"
+                           TextAlignment="Right"
                            Classes="caption"
+                           MinWidth="300"
+                           MaxWidth="300"
                            Text="{Binding UpdateStatusMessage}"/>
 
                 <Border Grid.Row="4"
                         Grid.Column="1"
                         Grid.ColumnSpan="3"
                         Margin="0,8,0,0"
+                        MaxWidth="300"
+                        MinWidth="300"
+                        HorizontalAlignment="Right"
                         Classes="language-chip">
                     <Grid ColumnDefinitions="Auto,Auto,*">
                         <TextBlock Margin="10,0,6,0"
@@ -262,8 +284,8 @@
                                    Classes="caption"
                                    Text="|"/>
                         <ComboBox Grid.Column="2"
-                                  Width="220"
                                   Margin="8,0,8,0"
+                                  HorizontalAlignment="Stretch"
                                   VerticalAlignment="Center"
                                   Classes="language-inline"
                                   ItemTemplate="{StaticResource LanguageOptionTemplate}"
@@ -356,7 +378,9 @@
         <Border Grid.Row="3"
                 Classes="card"
                 Margin="0,10,0,0">
-            <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto,Auto">
+            <Grid RowDefinitions="Auto,Auto"
+                  ColumnDefinitions="*,Auto,Auto,Auto">
+                
                 <TextBlock VerticalAlignment="Center"
                            Text="{Binding StatusMessage}"/>
                 <TextBlock Grid.Column="1"
@@ -373,23 +397,26 @@
                         <TextBlock Text="{Binding TwitchButtonText}"/>
                     </StackPanel>
                 </Button>
-                <TextBlock Grid.Column="3"
-                           Margin="16,0,0,0"
+                <TextBlock Grid.Row="1"
+                           Margin="0,8,0,0"
                            VerticalAlignment="Center"
                            Classes="caption"
                            Text="{Binding ReleaseVersionText}"/>
-                <TextBlock Grid.Column="4"
-                           Margin="16,0,0,0"
+                <TextBlock Grid.Row="1"
+                           Grid.Column="1"
+                           Margin="16,8,0,0"
                            VerticalAlignment="Center"
                            Classes="caption"
                            Text="{Binding DataSource}"/>
-                <TextBlock Grid.Column="5"
-                           Margin="16,0,0,0"
+                <TextBlock Grid.Row="1"
+                           Grid.Column="2"
+                           Margin="16,8,0,0"
                            VerticalAlignment="Center"
                            Classes="caption"
                            Text="{Binding LastSyncText}"/>
-                <TextBlock Grid.Column="6"
-                           Margin="16,0,0,0"
+                <TextBlock Grid.Row="1"
+                           Grid.Column="3"
+                           Margin="16,8,0,0"
                            VerticalAlignment="Center"
                            Classes="caption"
                            Text="{Binding LastSessionSyncText}"/>
