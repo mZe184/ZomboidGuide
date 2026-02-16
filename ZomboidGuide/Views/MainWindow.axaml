@@ -288,6 +288,7 @@
                            MaxWidth="300"
                            Text="{Binding UpdateStatusMessage}"/>
                 <Button Grid.Row="3"
+                        Classes="update-available"
                         Grid.ColumnSpan="2"
                         HorizontalAlignment="Right"
                         Margin="0,8,0,0"
@@ -499,6 +500,45 @@
                            VerticalAlignment="Center"
                            Classes="caption"
                            Text="{Binding LastSessionSyncText}"/>
+            </Grid>
+        </Border>
+
+        <Border Grid.RowSpan="4"
+                IsVisible="{Binding IsUpdatePromptVisible}"
+                Background="#AA000000">
+            <Grid>
+                <Border Classes="card update-dialog-card"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Width="560"
+                        MaxWidth="760">
+                    <StackPanel Spacing="12">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <material:MaterialIcon Kind="Update" Width="22" Height="22"/>
+                            <TextBlock Classes="update-dialog-title"
+                                       VerticalAlignment="Center"
+                                       Text="{Binding UpdatePromptTitleText}"/>
+                        </StackPanel>
+
+                        <TextBlock TextWrapping="Wrap"
+                                   Text="{Binding UpdatePromptMessageText}"/>
+
+                        <StackPanel Orientation="Horizontal"
+                                    HorizontalAlignment="Right"
+                                    Spacing="8">
+                            <Button Command="{Binding DismissUpdatePromptForSessionCommand}">
+                                <TextBlock Text="{Binding DismissUpdatePromptButtonText}"/>
+                            </Button>
+                            <Button Classes="update-available"
+                                    Command="{Binding InstallUpdateCommand}">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <material:MaterialIcon Kind="Download" Width="16" Height="16"/>
+                                    <TextBlock Text="{Binding InstallUpdateButtonText}"/>
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
             </Grid>
         </Border>
     </Grid>

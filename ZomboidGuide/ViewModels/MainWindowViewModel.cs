@@ -49,6 +49,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private bool _suppressStatusFilterReload;
     private bool _suppressTodoStateWrite;
     private bool _isInitializing;
+    private bool _skipUpdatePromptForSession;
     private FileSystemWatcher? _sessionWatcher;
     private bool _sessionWatcherDirty;
     private string _watchedSavePath = string.Empty;
@@ -120,6 +121,9 @@ public partial class MainWindowViewModel : ViewModelBase
     private bool isUpdateAvailable;
 
     [ObservableProperty]
+    private bool isUpdatePromptVisible;
+
+    [ObservableProperty]
     private string dataSource = "Not loaded yet";
 
     [ObservableProperty]
@@ -185,6 +189,27 @@ public partial class MainWindowViewModel : ViewModelBase
     public string CheckUpdatesButtonText => L("Check For Update", "Nach Update suchen");
 
     public string InstallUpdateButtonText => L("Install Update", "Update installieren");
+
+    public string DismissUpdatePromptButtonText => L("Skip For This Session", "Für diese Session überspringen");
+
+    public string UpdatePromptTitleText => L("Update available", "Update verfügbar");
+
+    public string UpdatePromptMessageText
+    {
+        get
+        {
+            if (_latestUpdateResult?.AvailableVersion is not null)
+            {
+                return L(
+                    $"A newer version ({_latestUpdateResult.AvailableVersion}) is available. Install now?",
+                    $"Eine neuere Version ({_latestUpdateResult.AvailableVersion}) ist verfügbar. Jetzt installieren?");
+            }
+
+            return L(
+                "A newer version is available. Install now?",
+                "Eine neuere Version ist verfügbar. Jetzt installieren?");
+        }
+    }
 
     public string ReleaseVersionLabelText => L("Version", "Version");
 
@@ -386,6 +411,11 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     private async Task CheckUpdatesAsync()
     {
+        await CheckUpdatesCoreAsync(showPromptForThisSession: false);
+    }
+
+    private async Task CheckUpdatesCoreAsync(bool showPromptForThisSession)
+    {
         var currentVersion = GetCurrentAppVersion();
         var result = await Task.Run(() => _appUpdateService.CheckForUpdate(DefaultGitHubUpdateRepository, currentVersion));
         _state.LastUpdateCheckAt = DateTimeOffset.Now;
@@ -393,9 +423,11 @@ public partial class MainWindowViewModel : ViewModelBase
         if (!result.Success)
         {
             IsUpdateAvailable = false;
+            IsUpdatePromptVisible = false;
             _latestUpdateResult = null;
             UpdateStatusMessage = L("Update check failed.", "Update-Prüfung fehlgeschlagen.");
             UpdateReleaseVersionText();
+            OnPropertyChanged(nameof(UpdatePromptMessageText));
             await SaveStateAsync();
             return;
         }
@@ -412,13 +444,20 @@ public partial class MainWindowViewModel : ViewModelBase
             UpdateStatusMessage = L(
                 $"Update available. Version: {result.AvailableVersion}",
                 $"Update verfügbar. Version: {result.AvailableVersion}");
+
+            if (showPromptForThisSession && !_skipUpdatePromptForSession)
+            {
+                IsUpdatePromptVisible = true;
+            }
         }
         else
         {
             var release = result.AvailableVersion?.ToString() ?? _state.LastKnownReleaseVersion;
             UpdateStatusMessage = $"Version: {(string.IsNullOrWhiteSpace(release) ? "-" : release)}";
+            IsUpdatePromptVisible = false;
         }
 
+        OnPropertyChanged(nameof(UpdatePromptMessageText));
         UpdateReleaseVersionText();
         await SaveStateAsync();
     }
@@ -431,6 +470,8 @@ public partial class MainWindowViewModel : ViewModelBase
             UpdateStatusMessage = L("No update available to install.", "Kein Update zum Installieren gefunden.");
             return;
         }
+
+        IsUpdatePromptVisible = false;
 
         if (!_appUpdateService.TryStartUpdate(_latestUpdateResult, out var errorMessage))
         {
@@ -448,6 +489,16 @@ public partial class MainWindowViewModel : ViewModelBase
         }
 
         Environment.Exit(0);
+    }
+
+    [RelayCommand]
+    private void DismissUpdatePromptForSession()
+    {
+        _skipUpdatePromptForSession = true;
+        IsUpdatePromptVisible = false;
+        UpdateStatusMessage = L(
+            "Update reminder dismissed for this session.",
+            "Update-Hinweis für diese Session ausgeblendet.");
     }
 
     [RelayCommand]
@@ -534,7 +585,7 @@ public partial class MainWindowViewModel : ViewModelBase
             await ReloadDataAsync(preferGameFiles: !string.IsNullOrWhiteSpace(GamePath));
             ConfigureSessionWatcher();
             await TrySyncSessionOnStartupAsync();
-            await CheckUpdatesAsync();
+            await CheckUpdatesCoreAsync(showPromptForThisSession: true);
         }
         finally
         {
@@ -1905,6 +1956,9 @@ public partial class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(AutoUpdateOnText));
         OnPropertyChanged(nameof(CheckUpdatesButtonText));
         OnPropertyChanged(nameof(InstallUpdateButtonText));
+        OnPropertyChanged(nameof(DismissUpdatePromptButtonText));
+        OnPropertyChanged(nameof(UpdatePromptTitleText));
+        OnPropertyChanged(nameof(UpdatePromptMessageText));
         OnPropertyChanged(nameof(ReleaseVersionLabelText));
         OnPropertyChanged(nameof(LanguageLabelText));
         OnPropertyChanged(nameof(BookFilterLabelText));

@@ -167,6 +167,33 @@
             <Setter Property="Foreground" Value="#D4E592"/>
         </Style>
 
+        <Style Selector="Button.update-available">
+            <Setter Property="Background" Value="#B56A13"/>
+            <Setter Property="BorderBrush" Value="#E5983C"/>
+            <Setter Property="Foreground" Value="#FFF6E8"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="4"/>
+        </Style>
+
+        <Style Selector="Button.update-available:pointerover">
+            <Setter Property="Background" Value="#D68016"/>
+            <Setter Property="BorderBrush" Value="#FFB85A"/>
+        </Style>
+
+        <Style Selector="Border.update-dialog-card">
+            <Setter Property="Background" Value="#202319"/>
+            <Setter Property="BorderBrush" Value="#E5983C"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Padding" Value="16"/>
+        </Style>
+
+        <Style Selector="TextBlock.update-dialog-title">
+            <Setter Property="FontSize" Value="20"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Foreground" Value="#FFB85A"/>
+        </Style>
+
         <Style Selector="TextBox">
             <Setter Property="Background" Value="{StaticResource PzCardSecondaryBrush}"/>
             <Setter Property="Foreground" Value="{StaticResource PzTextBrush}"/>
