@@ -29,9 +29,9 @@ Als Quelle wird in der App ein Repository angegeben, z. B.:
 - `MietzeMatze/ZomboidGuide-Releases`
 - oder eine GitHub-URL auf dieses Repo
 
-Die Release-Assets muessen ZIP-Dateien enthalten.
+Die Release-Assets sollen den Installer enthalten.
 Empfohlen ist das Asset:
-- `ZomboidGuide-<version>-win-x64.zip`
+- `ZomboidGuide-Setup-<Version>.exe`
 
 ## 4) In der App konfigurieren
 
@@ -42,7 +42,8 @@ Empfohlen ist das Asset:
 - `Nach Update suchen` klicken (oder beim Start automatisch pruefen).
 - Bei verfuegbarer neuer Version: `Update installieren`.
 
-Die App laedt das ZIP aus GitHub, entpackt es, fuehrt das Update aus und startet neu.
+Die App laedt den Installer aus GitHub, startet ihn und beendet sich danach.
+Dadurch ist die Installation auch sauber ueber Windows deinstallierbar (Apps & Features).
 
 ## 5) Automatisches GitHub Release in separates Repo
 
@@ -67,8 +68,8 @@ Wichtig: Das Release wird **nicht** im Source-Repo erstellt, sondern in einem se
 Der Workflow:
 1. baut die App im Release-Modus
 2. erstellt `artifacts/publish/app` und `artifacts/update-feed`
-3. packt ZIP-Artefakte
-4. erstellt Release im Ziel-Repo und laedt die Dateien hoch
+3. erstellt mit Inno Setup einen Installer (`.exe`)
+4. erstellt Release im Ziel-Repo und laedt Installer + Checksummen hoch
 
 Beispiel:
 

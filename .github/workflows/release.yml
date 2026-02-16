@@ -85,24 +85,52 @@ jobs:
         run: |
           ./deployment/Build-Release.ps1 -Runtime "win-x64" -Configuration "Release" -Version "${env:APP_VERSION}"
 
-      - name: Pack Release Artifacts
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          choco install innosetup --yes --no-progress
+
+      - name: Build Installer Artifacts
         shell: pwsh
         run: |
           $releaseDir = "artifacts/release"
           New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
 
-          $appZip = Join-Path $releaseDir ("ZomboidGuide-{0}-win-x64.zip" -f $env:APP_VERSION)
-          $feedZip = Join-Path $releaseDir ("ZomboidGuide-{0}-update-feed.zip" -f $env:APP_VERSION)
+          $iscc = Get-Command iscc -ErrorAction SilentlyContinue
+          if ($null -eq $iscc) {
+            $fallbackIscc = Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"
+            if (-not (Test-Path $fallbackIscc)) {
+              throw "Inno Setup compiler (iscc) was not found."
+            }
+            $isccPath = $fallbackIscc
+          }
+          else {
+            $isccPath = $iscc.Path
+          }
 
-          if (Test-Path $appZip) { Remove-Item $appZip -Force }
-          if (Test-Path $feedZip) { Remove-Item $feedZip -Force }
+          $sourceDir = (Resolve-Path "artifacts/publish/app").Path
+          $outputDir = (Resolve-Path $releaseDir).Path
 
-          Compress-Archive -Path "artifacts/publish/app/*" -DestinationPath $appZip -CompressionLevel Optimal
-          Compress-Archive -Path "artifacts/update-feed/*" -DestinationPath $feedZip -CompressionLevel Optimal
+          & $isccPath `
+            "/DMyAppVersion=$env:APP_VERSION" `
+            "/DSourceDir=$sourceDir" `
+            "/DOutputDir=$outputDir" `
+            "deployment/Installer.iss"
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Installer build failed."
+          }
+
+          $installerFiles = Get-ChildItem -Path $releaseDir -Filter "*.exe" -File
+          if ($null -eq $installerFiles -or $installerFiles.Count -eq 0) {
+            throw "No installer executable was created."
+          }
 
           $hashLines = @()
-          $hashLines += ("{0}  {1}" -f (Get-FileHash $appZip -Algorithm SHA256).Hash.ToLowerInvariant(), [System.IO.Path]::GetFileName($appZip))
-          $hashLines += ("{0}  {1}" -f (Get-FileHash $feedZip -Algorithm SHA256).Hash.ToLowerInvariant(), [System.IO.Path]::GetFileName($feedZip))
+          foreach ($installer in $installerFiles) {
+            $hashLines += ("{0}  {1}" -f (Get-FileHash $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $installer.Name)
+          }
+
           $hashLines | Set-Content -Path (Join-Path $releaseDir "SHA256SUMS.txt") -Encoding utf8
 
       - name: Create GitHub Release
@@ -114,5 +142,5 @@ jobs:
           name: ZomboidGuide ${{ env.APP_VERSION }}
           generate_release_notes: true
           files: |
-            artifacts/release/*.zip
+            artifacts/release/*.exe
             artifacts/release/SHA256SUMS.txt

@@ -60,6 +60,11 @@ public sealed class AppUpdateService
             return false;
         }
 
+        if (IsInstallerAsset(updateResult.DownloadFileName) || IsInstallerAsset(updateResult.DownloadUrl))
+        {
+            return TryStartInstallerUpdate(updateResult, out errorMessage);
+        }
+
         if (!TryPrepareDownloadedPackage(updateResult, out var packagePath, out errorMessage))
         {
             return false;
@@ -125,6 +130,61 @@ public sealed class AppUpdateService
         }
     }
 
+    private static bool TryStartInstallerUpdate(UpdateCheckResult updateResult, out string errorMessage)
+    {
+        errorMessage = string.Empty;
+
+        var workingDirectory = Path.Combine(Path.GetTempPath(), "ZomboidGuide", "installer", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(workingDirectory);
+
+        var fileName = string.IsNullOrWhiteSpace(updateResult.DownloadFileName)
+            ? "ZomboidGuide-Setup.exe"
+            : Path.GetFileName(updateResult.DownloadFileName);
+        if (!fileName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+        {
+            fileName = $"{fileName}.exe";
+        }
+
+        var installerPath = Path.Combine(workingDirectory, fileName);
+
+        try
+        {
+            using (var response = HttpClient.GetAsync(updateResult.DownloadUrl).GetAwaiter().GetResult())
+            {
+                if (!response.IsSuccessStatusCode)
+                {
+                    errorMessage = $"Installer-Download fehlgeschlagen ({(int)response.StatusCode}).";
+                    return false;
+                }
+
+                using var source = response.Content.ReadAsStreamAsync().GetAwaiter().GetResult();
+                using var target = File.Create(installerPath);
+                source.CopyTo(target);
+            }
+        }
+        catch (Exception exception)
+        {
+            errorMessage = $"Installer konnte nicht heruntergeladen werden: {exception.Message}";
+            return false;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = installerPath,
+                WorkingDirectory = workingDirectory,
+                UseShellExecute = true,
+            });
+            return true;
+        }
+        catch (Exception exception)
+        {
+            errorMessage = $"Installer konnte nicht gestartet werden: {exception.Message}";
+            return false;
+        }
+    }
+
     private static UpdateCheckResult CheckForGitHubUpdate(string owner, string repository, Version currentVersion)
     {
         var latestReleaseUrl = $"https://api.github.com/repos/{owner}/{repository}/releases/latest";
@@ -173,7 +233,7 @@ public sealed class AppUpdateService
             {
                 Success = false,
                 CurrentVersion = currentVersion,
-                Message = "Kein passendes ZIP-Asset im GitHub Release gefunden.",
+                Message = "Kein passendes Installer- oder ZIP-Asset im GitHub Release gefunden.",
             };
         }
 
@@ -201,6 +261,31 @@ public sealed class AppUpdateService
             return null;
         }
 
+        var installerAssets = release.Assets
+            .Where(asset => !string.IsNullOrWhiteSpace(asset.Name) &&
+                            asset.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (installerAssets.Count > 0)
+        {
+            var preferredInstaller = installerAssets.FirstOrDefault(asset =>
+                asset.Name.Contains("setup", StringComparison.OrdinalIgnoreCase) &&
+                asset.Name.Contains("win", StringComparison.OrdinalIgnoreCase));
+            if (preferredInstaller is not null)
+            {
+                return preferredInstaller;
+            }
+
+            var secondInstallerChoice = installerAssets.FirstOrDefault(asset =>
+                asset.Name.Contains("setup", StringComparison.OrdinalIgnoreCase) ||
+                asset.Name.Contains("installer", StringComparison.OrdinalIgnoreCase));
+            if (secondInstallerChoice is not null)
+            {
+                return secondInstallerChoice;
+            }
+
+            return installerAssets.First();
+        }
+
         var zipAssets = release.Assets
             .Where(asset => !string.IsNullOrWhiteSpace(asset.Name) &&
                             asset.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
@@ -226,6 +311,24 @@ public sealed class AppUpdateService
         }
 
         return zipAssets.First();
+    }
+
+    private static bool IsInstallerAsset(string fileNameOrUrl)
+    {
+        if (string.IsNullOrWhiteSpace(fileNameOrUrl))
+        {
+            return false;
+        }
+
+        var candidate = fileNameOrUrl.Trim();
+        var queryIndex = candidate.IndexOf('?');
+        if (queryIndex >= 0)
+        {
+            candidate = candidate[..queryIndex];
+        }
+
+        candidate = Path.GetFileName(candidate);
+        return candidate.EndsWith(".exe", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool TryPrepareDownloadedPackage(
