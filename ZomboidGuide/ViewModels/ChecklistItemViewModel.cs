@@ -200,6 +200,9 @@ public sealed partial class ChecklistItemViewModel : ViewModelBase
     [ObservableProperty]
     private string sessionState = string.Empty;
 
+    [ObservableProperty]
+    private string sessionStateKey = string.Empty;
+
     partial void OnIsCheckedChanged(bool value)
     {
         OnPropertyChanged(nameof(CardAccentBrush));

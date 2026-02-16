@@ -766,6 +766,15 @@ public partial class MainWindowViewModel : ViewModelBase
 
                 var shouldCheck = isCurrentlyInInventory || seenInInventory || isReadWithActiveBoost || isObsolete;
                 book.IsChecked = shouldCheck;
+                book.SessionStateKey = isObsolete
+                    ? "obsolete"
+                    : isCurrentlyInInventory
+                        ? "in_inventory"
+                        : isReadWithActiveBoost
+                            ? "read"
+                            : seenInInventory
+                                ? "seen_inventory"
+                                : "open";
                 book.SessionState = isObsolete
                     ? L("No Longer Needed (skill level too high)", "Nicht mehr benötigt (Skill-Stufe zu hoch)")
                     : isCurrentlyInInventory
@@ -792,6 +801,11 @@ public partial class MainWindowViewModel : ViewModelBase
                 var isRead = readMagazineIds.Contains(magazine.Id, StringComparer.OrdinalIgnoreCase);
                 var shouldCheck = inInventory || isRead;
                 magazine.IsChecked = shouldCheck;
+                magazine.SessionStateKey = isRead
+                    ? "read"
+                    : inInventory
+                        ? "in_inventory"
+                        : "open";
                 magazine.SessionState = isRead
                     ? L("Read", "Gelesen")
                     : inInventory
@@ -812,6 +826,7 @@ public partial class MainWindowViewModel : ViewModelBase
             {
                 var learned = learnedRecipeIds.Contains(recipe.Id, StringComparer.OrdinalIgnoreCase);
                 recipe.IsChecked = learned;
+                recipe.SessionStateKey = learned ? "learned" : "open";
                 recipe.SessionState = learned ? L("Learned", "Gelernt") : L("Open", "Noch offen");
 
                 if (learned)
@@ -873,6 +888,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
             var isChecked = _state.CheckedItems.TryGetValue(item.Id, out var stored) && stored;
             var vmItem = new ChecklistItemViewModel(item, isChecked);
+            vmItem.SessionStateKey = "open";
             vmItem.SessionState = string.Empty;
             vmItem.PropertyChanged += OnChecklistItemChanged;
             _allItems.Add(vmItem);
@@ -977,26 +993,67 @@ public partial class MainWindowViewModel : ViewModelBase
         var key = string.IsNullOrWhiteSpace(statusFilter)
             ? "all"
             : statusFilter.ToLowerInvariant();
-        var state = item.SessionState ?? string.Empty;
+        var stateKey = ResolveSessionStateKey(item);
         return key switch
         {
             "all" => true,
-            "open" => state.StartsWith("Open", StringComparison.OrdinalIgnoreCase) ||
-                      state.StartsWith("Noch offen", StringComparison.OrdinalIgnoreCase),
-            "in_inventory" => state.StartsWith("In Inventory", StringComparison.OrdinalIgnoreCase) ||
-                              state.StartsWith("Im Inventar", StringComparison.OrdinalIgnoreCase),
-            "seen_inventory" => state.StartsWith("Seen in Inventory", StringComparison.OrdinalIgnoreCase) ||
-                                state.StartsWith("Befand sich mal im Inventar", StringComparison.OrdinalIgnoreCase),
-            "read" => state.StartsWith("Read", StringComparison.OrdinalIgnoreCase) ||
-                      state.StartsWith("Gelesen", StringComparison.OrdinalIgnoreCase),
-            "obsolete" => state.StartsWith("No Longer Needed", StringComparison.OrdinalIgnoreCase) ||
-                          state.StartsWith("Nicht mehr", StringComparison.OrdinalIgnoreCase),
-            "learned" => state.StartsWith("Learned", StringComparison.OrdinalIgnoreCase) ||
-                         state.StartsWith("Gelernt", StringComparison.OrdinalIgnoreCase),
+            "open" => string.IsNullOrWhiteSpace(stateKey) || stateKey == "open",
+            "in_inventory" => stateKey == "in_inventory",
+            "seen_inventory" => stateKey == "seen_inventory",
+            "read" => stateKey == "read",
+            "obsolete" => stateKey == "obsolete",
+            "learned" => stateKey == "learned",
             "checked" => item.IsChecked,
             "unchecked" => !item.IsChecked,
             _ => true,
         };
+    }
+
+    private static string ResolveSessionStateKey(ChecklistItemViewModel item)
+    {
+        if (!string.IsNullOrWhiteSpace(item.SessionStateKey))
+        {
+            return item.SessionStateKey.Trim().ToLowerInvariant();
+        }
+
+        var state = item.SessionState ?? string.Empty;
+        if (state.StartsWith("In Inventory", StringComparison.OrdinalIgnoreCase) ||
+            state.StartsWith("Im Inventar", StringComparison.OrdinalIgnoreCase))
+        {
+            return "in_inventory";
+        }
+
+        if (state.StartsWith("Seen in Inventory", StringComparison.OrdinalIgnoreCase) ||
+            state.StartsWith("Befand sich mal im Inventar", StringComparison.OrdinalIgnoreCase))
+        {
+            return "seen_inventory";
+        }
+
+        if (state.StartsWith("No Longer Needed", StringComparison.OrdinalIgnoreCase) ||
+            state.StartsWith("Nicht mehr", StringComparison.OrdinalIgnoreCase))
+        {
+            return "obsolete";
+        }
+
+        if (state.StartsWith("Read", StringComparison.OrdinalIgnoreCase) ||
+            state.StartsWith("Gelesen", StringComparison.OrdinalIgnoreCase))
+        {
+            return "read";
+        }
+
+        if (state.StartsWith("Learned", StringComparison.OrdinalIgnoreCase) ||
+            state.StartsWith("Gelernt", StringComparison.OrdinalIgnoreCase))
+        {
+            return "learned";
+        }
+
+        if (state.StartsWith("Open", StringComparison.OrdinalIgnoreCase) ||
+            state.StartsWith("Noch offen", StringComparison.OrdinalIgnoreCase))
+        {
+            return "open";
+        }
+
+        return string.Empty;
     }
 
     private static void ReplaceCollection(
