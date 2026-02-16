@@ -485,7 +485,7 @@
                         <material:MaterialIcon Kind="Twitch" Width="16" Height="16"/>
                         <TextBlock Text="{Binding TwitchButtonTextZickchen}"  HorizontalAlignment="Right"/>
                     </StackPanel>
-                </Button>
+                </Button> 
                 <TextBlock Grid.Row="1"
                            Margin="0,8,0,0"
                            VerticalAlignment="Center"
