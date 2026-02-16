@@ -17,8 +17,10 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout (full history + tags)
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -106,7 +108,35 @@ jobs:
           $hashLines += ("{0}  {1}" -f (Get-FileHash $feedZip -Algorithm SHA256).Hash.ToLowerInvariant(), [System.IO.Path]::GetFileName($feedZip))
           $hashLines | Set-Content -Path (Join-Path $releaseDir "SHA256SUMS.txt") -Encoding utf8
 
-      - name: Create GitHub Release
+      - name: Build Release Notes (commits since last tag)
+        shell: pwsh
+        run: |
+          git fetch --tags --force
+
+          $tag = $env:APP_TAG  # z.B. v1.2.3
+          $prev = (git tag --list "v*" --sort=-v:refname | Where-Object { $_ -ne $tag } | Select-Object -First 1)
+
+          if ([string]::IsNullOrWhiteSpace($prev)) {
+            $log = git log --pretty=format:"- %s (%h)" -n 50
+            $rangeText = "(first tag – last 50 commits)"
+          } else {
+            $log = git log --pretty=format:"- %s (%h)" "$prev..$tag"
+            $rangeText = "$prev..$tag"
+          }
+
+          if ([string]::IsNullOrWhiteSpace($log)) {
+            $log = "- (keine Commits gefunden)"
+          }
+
+          $notes = @"
+## Changes ($rangeText)
+$log
+"@
+
+          $notes | Set-Content -Path "release-notes.md" -Encoding utf8
+          Write-Host "Release notes generated."
+
+      - name: Create GitHub Release (in Releases repo)
         uses: softprops/action-gh-release@v2
         with:
           repository: ${{ env.RELEASE_TARGET_REPOSITORY }}
@@ -114,7 +144,8 @@ jobs:
           tag_name: ${{ env.APP_TAG }}
           name: ZomboidGuide ${{ env.APP_VERSION }}
           target_commitish: ${{ env.RELEASE_TARGET_COMMITISH }}
-          generate_release_notes: true
+          generate_release_notes: false
+          body_path: release-notes.md
           files: |
             artifacts/release/*.zip
             artifacts/release/SHA256SUMS.txt
