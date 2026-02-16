@@ -121,6 +121,41 @@
                       x:DataType="vm:StatusFilterOptionViewModel">
             <TextBlock Text="{Binding Display}"/>
         </DataTemplate>
+
+        <TreeDataTemplate x:Key="TodoTaskTemplate"
+                          x:DataType="vm:TodoTaskViewModel"
+                          ItemsSource="{Binding Children}">
+            <Border Classes="item-card"
+                    Padding="8"
+                    Margin="0,0,0,6">
+                <Grid ColumnDefinitions="Auto,*,Auto"
+                      RowDefinitions="Auto,Auto">
+                    <CheckBox Grid.RowSpan="2"
+                              Margin="0,2,10,0"
+                              VerticalAlignment="Top"
+                              IsVisible="{Binding CanManuallyCheck}"
+                              IsChecked="{Binding IsManualChecked, Mode=TwoWay}"/>
+
+                    <TextBlock Grid.Column="1"
+                               Classes="item-title"
+                               Text="{Binding Title}"/>
+
+                    <TextBlock Grid.Row="1"
+                               Grid.Column="1"
+                               Classes="caption"
+                               Text="{Binding Detail}"
+                               IsVisible="{Binding HasDetail}"/>
+
+                    <Border Grid.Column="2"
+                            Grid.RowSpan="2"
+                            Classes="state-badge"
+                            Background="{Binding StatusBadgeBrush}">
+                        <TextBlock Classes="state-badge-text"
+                                   Text="{Binding StatusText}"/>
+                    </Border>
+                </Grid>
+            </Border>
+        </TreeDataTemplate>
     </Window.Resources>
 
     <Grid Margin="16"
@@ -301,7 +336,15 @@
                 Margin="0,10,0,0"
                 Padding="6">
             <TabControl>
-                <TabItem Header="{Binding SessionSkillsHeader}">
+                <TabItem>
+                    <TabItem.Header>
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <material:MaterialIcon Kind="AccountSchool" Width="16" Height="16"/>
+                            <TextBlock Classes="tab-title"
+                                       VerticalAlignment="Center"
+                                       Text="{Binding SessionSkillsHeader}"/>
+                        </StackPanel>
+                    </TabItem.Header>
                     <ScrollViewer Margin="2">
                         <ItemsControl ItemTemplate="{StaticResource SessionSkillTemplate}"
                                       ItemsSource="{Binding SessionSkills}"/>
@@ -311,8 +354,12 @@
                 <TabItem>
                     <TabItem.Header>
                         <Grid ColumnDefinitions="Auto,8,Auto">
-                            <TextBlock VerticalAlignment="Center"
-                                       Text="{Binding BooksTabHeader}"/>
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <material:MaterialIcon Kind="Books" Width="16" Height="16"/>
+                                <TextBlock Classes="tab-title"
+                                           VerticalAlignment="Center"
+                                           Text="{Binding BooksTabHeader}"/>
+                            </StackPanel>
                             <ComboBox Grid.Column="2"
                                       Classes="tab-filter"
                                       Width="168"
@@ -334,8 +381,12 @@
                 <TabItem>
                     <TabItem.Header>
                         <Grid ColumnDefinitions="Auto,8,Auto">
-                            <TextBlock VerticalAlignment="Center"
-                                       Text="{Binding MagazinesTabHeader}"/>
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <material:MaterialIcon Kind="NewspaperVariant" Width="16" Height="16"/>
+                                <TextBlock Classes="tab-title"
+                                           VerticalAlignment="Center"
+                                           Text="{Binding MagazinesTabHeader}"/>
+                            </StackPanel>
                             <ComboBox Grid.Column="2"
                                       Classes="tab-filter"
                                       Width="168"
@@ -357,8 +408,12 @@
                 <TabItem>
                     <TabItem.Header>
                         <Grid ColumnDefinitions="Auto,8,Auto">
-                            <TextBlock VerticalAlignment="Center"
-                                       Text="{Binding RecipesTabHeader}"/>
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <material:MaterialIcon Kind="ChefHat" Width="16" Height="16"/>
+                                <TextBlock Classes="tab-title"
+                                           VerticalAlignment="Center"
+                                           Text="{Binding RecipesTabHeader}"/>
+                            </StackPanel>
                             <ComboBox Grid.Column="2"
                                       Classes="tab-filter"
                                       Width="168"
@@ -371,6 +426,27 @@
                         <ItemsControl ItemTemplate="{StaticResource ChecklistItemTemplate}"
                                       ItemsSource="{Binding FilteredRecipes}"/>
                     </ScrollViewer>
+                </TabItem>
+
+                <TabItem>
+                    <TabItem.Header>
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <material:MaterialIcon Kind="ClipboardTextOutline" Width="16" Height="16"/>
+                            <TextBlock Classes="tab-title"
+                                       VerticalAlignment="Center"
+                                       Text="{Binding TodoTabHeader}"/>
+                        </StackPanel>
+                    </TabItem.Header>
+                    <Grid Margin="2"
+                          RowDefinitions="Auto,*">
+                        <TextBlock Classes="caption"
+                                   Margin="2,0,2,8"
+                                   TextWrapping="Wrap"
+                                   Text="{Binding TodoSubtitleText}"/>
+                        <TreeView Grid.Row="1"
+                                  ItemTemplate="{StaticResource TodoTaskTemplate}"
+                                  ItemsSource="{Binding TodoItems}"/>
+                    </Grid>
                 </TabItem>
             </TabControl>
         </Border>

@@ -31,6 +31,8 @@ public sealed class AppState
 
     public Dictionary<string, bool> CheckedItems { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
+    public Dictionary<string, bool> TodoManualChecks { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
     public List<string> SeenInInventoryItemIds { get; set; } = [];
 
     public List<string> CurrentInventoryItemIds { get; set; } = [];

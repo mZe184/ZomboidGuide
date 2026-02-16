@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
@@ -38,6 +38,8 @@ public partial class MainWindowViewModel : ViewModelBase
     private readonly List<ChecklistItemViewModel> _recipeItems = [];
     private readonly Dictionary<string, bool> _bookGroupExpandedStates = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, bool> _magazineGroupExpandedStates = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, TodoTaskViewModel> _todoItemsById = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<TodoTaskViewModel> _todoLeafItems = [];
 
     private AppState _state = new();
     private UpdateCheckResult? _latestUpdateResult;
@@ -45,6 +47,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private bool _sessionSyncRunning;
     private bool _suppressLanguageReload;
     private bool _suppressStatusFilterReload;
+    private bool _suppressTodoStateWrite;
     private bool _isInitializing;
     private FileSystemWatcher? _sessionWatcher;
     private bool _sessionWatcherDirty;
@@ -135,6 +138,12 @@ public partial class MainWindowViewModel : ViewModelBase
     private string recipeProgress = "0 / 0";
 
     [ObservableProperty]
+    private ObservableCollection<TodoTaskViewModel> todoItems = [];
+
+    [ObservableProperty]
+    private string todoProgress = "0 / 0";
+
+    [ObservableProperty]
     private bool isBusy;
 
     public string HeaderTitleText => "MietzeMatze's Zomboid Guide";
@@ -185,13 +194,19 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public string RecipesTabHeader => $"{L("Recipes", "Rezepte")} ({RecipeProgress})";
 
+    public string TodoTabHeader => $"{L("ToDo", "ToDo")} ({TodoProgress})";
+
+    public string TodoSubtitleText => L(
+        "Recommended run flow. Manual checks are possible; many steps complete automatically from your books, magazines, recipes, and session skills.",
+        "Empfohlener Run-Ablauf. Manuelle Haken sind möglich; viele Schritte werden automatisch aus Büchern, Magazinen, Rezepten und Session-Skills abgeschlossen.");
+
     public string CopyrightLabelText => "Copyright (c)";
 
     public string TwitchButtonText => L("MietzeMatze on Twitch", "MietzeMatze auf Twitch");
 
     public string LanguageLabelText => L("Language", "Sprache");
 
-    public string BookFilterLabelText => L("Books Filter", "Buecher-Filter");
+    public string BookFilterLabelText => L("Books Filter", "Bücher-Filter");
 
     public string MagazineFilterLabelText => L("Magazines Filter", "Magazine-Filter");
 
@@ -313,6 +328,11 @@ public partial class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(RecipesTabHeader));
     }
 
+    partial void OnTodoProgressChanged(string value)
+    {
+        OnPropertyChanged(nameof(TodoTabHeader));
+    }
+
     [RelayCommand]
     private async Task RefreshFromGameAsync()
     {
@@ -374,7 +394,7 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             IsUpdateAvailable = false;
             _latestUpdateResult = null;
-            UpdateStatusMessage = L("Update check failed.", "Update-Pruefung fehlgeschlagen.");
+            UpdateStatusMessage = L("Update check failed.", "Update-Prüfung fehlgeschlagen.");
             UpdateReleaseVersionText();
             await SaveStateAsync();
             return;
@@ -391,7 +411,7 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             UpdateStatusMessage = L(
                 $"Update available. Version: {result.AvailableVersion}",
-                $"Update verfuegbar. Version: {result.AvailableVersion}");
+                $"Update verfügbar. Version: {result.AvailableVersion}");
         }
         else
         {
@@ -450,6 +470,7 @@ public partial class MainWindowViewModel : ViewModelBase
         _state.SeenInInventoryItemIds.Clear();
         _state.CurrentInventoryItemIds.Clear();
         UpdateProgress();
+        RefreshTodoAutoStates();
         await SaveStateAsync();
         StatusMessage = L("All checklists have been reset.", "Alle Checklisten wurden zurückgesetzt.");
     }
@@ -463,6 +484,7 @@ public partial class MainWindowViewModel : ViewModelBase
             _state.SeenInInventoryItemIds ??= [];
             _state.CurrentInventoryItemIds ??= [];
             _state.KnownCatalogItemIds ??= [];
+            _state.TodoManualChecks ??= new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
             if (_state.InventoryDetectionVersion < CurrentInventoryDetectionVersion)
             {
                 _state.SeenInInventoryItemIds.Clear();
@@ -611,6 +633,7 @@ public partial class MainWindowViewModel : ViewModelBase
                 result.LearnedRecipeItemIds,
                 result.SkillLevels);
             ApplySessionSkills(result.SkillLevels);
+            RefreshTodoAutoStates();
 
             _state.LastSessionSyncAt = DateTimeOffset.Now;
             LastSessionSyncText = L(
@@ -789,6 +812,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
         ApplyFilters();
         UpdateProgress();
+        RebuildTodoPlan();
     }
 
     private void ApplyFilters()
@@ -964,6 +988,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
         ApplyFilters();
         UpdateProgress();
+        RefreshTodoAutoStates();
         await SaveStateAsync();
     }
 
@@ -1010,6 +1035,7 @@ public partial class MainWindowViewModel : ViewModelBase
         BookProgress = BuildProgressText(_bookItems);
         MagazineProgress = BuildProgressText(_magazineItems);
         RecipeProgress = BuildProgressText(_recipeItems);
+        UpdateTodoProgress();
     }
 
     private static string BuildProgressText(IReadOnlyCollection<ChecklistItemViewModel> items)
@@ -1021,6 +1047,603 @@ public partial class MainWindowViewModel : ViewModelBase
 
         var checkedCount = items.Count(item => item.IsChecked);
         return $"{checkedCount} / {items.Count}";
+    }
+
+    private void RebuildTodoPlan()
+    {
+        _state.TodoManualChecks ??= new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        _suppressTodoStateWrite = true;
+        try
+        {
+            foreach (var leaf in _todoLeafItems)
+            {
+                leaf.PropertyChanged -= OnTodoTaskPropertyChanged;
+            }
+
+            _todoItemsById.Clear();
+            _todoLeafItems.Clear();
+            TodoItems.Clear();
+
+            foreach (var root in BuildTodoTree())
+            {
+                TodoItems.Add(root);
+                RegisterTodoTaskRecursive(root);
+            }
+
+            foreach (var entry in _state.TodoManualChecks.Where(entry => entry.Value))
+            {
+                if (_todoItemsById.TryGetValue(entry.Key, out var node) && node.CanManuallyCheck)
+                {
+                    node.IsManualChecked = true;
+                }
+            }
+
+            RefreshTodoAutoStates();
+        }
+        finally
+        {
+            _suppressTodoStateWrite = false;
+        }
+    }
+
+    private IReadOnlyList<TodoTaskViewModel> BuildTodoTree()
+    {
+        var phase1 = CreateTodoTask(
+            "todo.phase1",
+            "Phase 1: Day 1 Survival (sequential)",
+            "Phase 1: Tag-1-Überleben (nacheinander)",
+            "Secure basics first, then move out.",
+            "Zuerst die Grundlagen sichern, dann weiterziehen.");
+        phase1.AddChild(CreateTodoTask(
+            "todo.weapon_bag",
+            "Secure melee weapon + backpack",
+            "Nahkampfwaffe + Rucksack sichern",
+            "Do this before long looting routes.",
+            "Vor längeren Loot-Routen abschließen."));
+        phase1.AddChild(CreateTodoTask(
+            "todo.safehouse",
+            "Prepare temporary safehouse",
+            "Temporäres Safehouse vorbereiten",
+            "Curtains/sheets, sleeping spot, fallback exit.",
+            "Vorhänge/Bettlaken, Schlafplatz, Fluchtweg."));
+        phase1.AddChild(CreateTodoTask(
+            "todo.water_food_tools",
+            "Water reserve + can opener + basic meds",
+            "Wasserreserve + Dosenöffner + Basis-Medizin",
+            "Core items for the first days.",
+            "Kern-Items für die ersten Tage."));
+
+        var phase2 = CreateTodoTask(
+            "todo.phase2",
+            "Phase 2: First week XP window (parallel)",
+            "Phase 2: Erste Woche XP-Fenster (parallel)",
+            "These can be done in parallel while looting.",
+            "Diese Schritte parallel während des Lootens abarbeiten.");
+        phase2.AddChild(CreateTodoTask(
+            "todo.life_and_living",
+            "Watch Life and Living broadcasts",
+            "Life and Living Sendungen schauen",
+            "Time-sensitive XP during early days.",
+            "Zeitkritischer XP-Boost in den ersten Tagen."));
+        phase2.AddChild(CreateTodoTask(
+            "todo.books_two",
+            "At least 2 skill books completed/found",
+            "Mindestens 2 Skill-Bücher erledigt/gefunden",
+            "Auto from your Books tracker.",
+            "Automatisch aus dem Bücher-Tracker."));
+        phase2.AddChild(CreateTodoTask(
+            "todo.magazines_one",
+            "At least 1 magazine completed/found",
+            "Mindestens 1 Magazin erledigt/gefunden",
+            "Auto from your Magazine tracker.",
+            "Automatisch aus dem Magazin-Tracker."));
+        phase2.AddChild(CreateTodoTask(
+            "todo.carpentry2",
+            "Carpentry level >= 2",
+            "Tischlerei >= 2",
+            "Auto from session skill levels.",
+            "Automatisch aus Session-Skillleveln."));
+        phase2.AddChild(CreateTodoTask(
+            "todo.read_carpentry1",
+            "Carpentry book level 1 covered",
+            "Tischlerei-Buch Stufe 1 abgedeckt",
+            "Auto by matching category and tier.",
+            "Automatisch über Kategorie + Buchstufe."));
+        phase2.AddChild(CreateTodoTask(
+            "todo.read_cooking1",
+            "Cooking book level 1 covered",
+            "Koch-Buch Stufe 1 abgedeckt",
+            "Auto by matching category and tier.",
+            "Automatisch über Kategorie + Buchstufe."));
+        phase2.AddChild(CreateTodoTask(
+            "todo.read_mechanics1",
+            "Mechanics book level 1 covered",
+            "Mechanik-Buch Stufe 1 abgedeckt",
+            "Auto by matching category and tier.",
+            "Automatisch über Kategorie + Buchstufe."));
+
+        var phase3 = CreateTodoTask(
+            "todo.phase3",
+            "Phase 3: Mobility and power (sequential)",
+            "Phase 3: Mobilität und Strom (nacheinander)",
+            "Unlock movement and long-term base utility.",
+            "Mobilität und dauerhafte Basisversorgung freischalten.");
+        phase3.AddChild(CreateTodoTask(
+            "todo.hotwire",
+            "Hotwire ready (Mechanics 2 + Electrical 1)",
+            "Hotwire bereit (Mechanik 2 + Elektro 1)",
+            "Auto from session skill levels.",
+            "Automatisch aus Session-Skillleveln."));
+        phase3.AddChild(CreateTodoTask(
+            "todo.generator_knowledge",
+            "Generator knowledge (magazine or Electrical 3)",
+            "Generator-Wissen (Magazin oder Elektro 3)",
+            "Auto from magazine tracking / skills.",
+            "Automatisch aus Magazin-Tracking / Skills."));
+        phase3.AddChild(CreateTodoTask(
+            "todo.rain_collector",
+            "Build rain collector setup",
+            "Regenwasser-Setup bauen",
+            "Prepare before water shutoff.",
+            "Vor Wasserabschaltung vorbereiten."));
+
+        var phase4 = CreateTodoTask(
+            "todo.phase4",
+            "Phase 4: Knowledge loop (parallel)",
+            "Phase 4: Wissens-Loop (parallel)",
+            "Push your progression with books, magazines, recipes.",
+            "Progression über Bücher, Magazine und Rezepte beschleunigen.");
+        phase4.AddChild(CreateTodoTask(
+            "todo.books_five",
+            "At least 5 books completed",
+            "Mindestens 5 Bücher erledigt",
+            "Auto from Books tracker.",
+            "Automatisch aus Bücher-Tracker."));
+        phase4.AddChild(CreateTodoTask(
+            "todo.magazines_three",
+            "At least 3 magazines completed",
+            "Mindestens 3 Magazine erledigt",
+            "Auto from Magazine tracker.",
+            "Automatisch aus Magazin-Tracker."));
+        phase4.AddChild(CreateTodoTask(
+            "todo.recipes_ten",
+            "At least 10 recipes learned",
+            "Mindestens 10 Rezepte gelernt",
+            "Auto from Recipe tracker.",
+            "Automatisch aus Rezepte-Tracker."));
+
+        var phase5 = CreateTodoTask(
+            "todo.phase5",
+            "Phase 5: Stable long run (sequential)",
+            "Phase 5: Stabiler Long-Run (nacheinander)",
+            "Lock in repeatable survival systems.",
+            "Wiederholbare Überlebenssysteme finalisieren.");
+        phase5.AddChild(CreateTodoTask(
+            "todo.carpentry4",
+            "Carpentry level >= 4",
+            "Tischlerei >= 4",
+            "Auto from session skill levels.",
+            "Automatisch aus Session-Skillleveln."));
+        phase5.AddChild(CreateTodoTask(
+            "todo.cooking_or_farming",
+            "Cooking >= 4 or Farming >= 2",
+            "Kochen >= 4 oder Landwirtschaft >= 2",
+            "Auto from session skill levels.",
+            "Automatisch aus Session-Skillleveln."));
+        phase5.AddChild(CreateTodoTask(
+            "todo.sustainable_base",
+            "Vehicle + generator + water loop stable",
+            "Fahrzeug + Generator + Wasserkreislauf stabil",
+            "Final manual validation step.",
+            "Finaler manueller Validierungsschritt."));
+
+        var phase6 = CreateTodoTask(
+            "todo.phase6",
+            "Phase 6: Combat and logistics (parallel)",
+            "Phase 6: Kampf und Logistik (parallel)",
+            "Scale your combat reliability while keeping supplies stable.",
+            "Baue Kampfstabilität aus und halte die Versorgung konstant.");
+        phase6.AddChild(CreateTodoTask(
+            "todo.maintenance3",
+            "Maintenance >= 3",
+            "Instandhaltung >= 3",
+            "Auto from session skill levels.",
+            "Automatisch aus Session-Skillleveln."));
+        phase6.AddChild(CreateTodoTask(
+            "todo.aiming3_or_melee5",
+            "Aiming >= 3 or any melee skill >= 5",
+            "Zielen >= 3 oder ein Nahkampfskill >= 5",
+            "Auto from session skill levels.",
+            "Automatisch aus Session-Skillleveln."));
+        phase6.AddChild(CreateTodoTask(
+            "todo.books_eight",
+            "At least 8 books completed",
+            "Mindestens 8 Bücher erledigt",
+            "Auto from Books tracker.",
+            "Automatisch aus Bücher-Tracker."));
+        phase6.AddChild(CreateTodoTask(
+            "todo.magazines_five",
+            "At least 5 magazines completed",
+            "Mindestens 5 Magazine erledigt",
+            "Auto from Magazine tracker.",
+            "Automatisch aus Magazin-Tracker."));
+        phase6.AddChild(CreateTodoTask(
+            "todo.recipes_twenty",
+            "At least 20 recipes learned",
+            "Mindestens 20 Rezepte gelernt",
+            "Auto from Recipe tracker.",
+            "Automatisch aus Rezepte-Tracker."));
+        phase6.AddChild(CreateTodoTask(
+            "todo.repair_stock",
+            "Keep repair materials and backup weapons stocked",
+            "Reparaturmaterial und Ersatzwaffen auf Vorrat halten",
+            "Manual logistics validation step.",
+            "Manueller Logistik-Check."));
+
+        var phase7 = CreateTodoTask(
+            "todo.phase7",
+            "Phase 7: Infrastructure hardening (sequential)",
+            "Phase 7: Infrastruktur absichern (nacheinander)",
+            "Stabilize your long-run base systems.",
+            "Langfristige Basis-Systeme absichern.");
+        phase7.AddChild(CreateTodoTask(
+            "todo.electrical4_or_metal4",
+            "Electrical >= 4 or Metalworking >= 4",
+            "Elektro >= 4 oder Metallbearbeitung >= 4",
+            "Auto from session skill levels.",
+            "Automatisch aus Session-Skillleveln."));
+        phase7.AddChild(CreateTodoTask(
+            "todo.mechanics5",
+            "Mechanics >= 5",
+            "Mechanik >= 5",
+            "Auto from session skill levels.",
+            "Automatisch aus Session-Skillleveln."));
+        phase7.AddChild(CreateTodoTask(
+            "todo.cooking6_or_farming4",
+            "Cooking >= 6 or Farming >= 4",
+            "Kochen >= 6 oder Landwirtschaft >= 4",
+            "Auto from session skill levels.",
+            "Automatisch aus Session-Skillleveln."));
+        phase7.AddChild(CreateTodoTask(
+            "todo.firstaid3",
+            "First Aid >= 3",
+            "Erste Hilfe >= 3",
+            "Auto from session skill levels.",
+            "Automatisch aus Session-Skillleveln."));
+        phase7.AddChild(CreateTodoTask(
+            "todo.second_base",
+            "Establish secondary fallback location",
+            "Zweiten Rückzugsort aufbauen",
+            "Manual strategic fallback step.",
+            "Manueller Strategie-Schritt."));
+
+        var phase8 = CreateTodoTask(
+            "todo.phase8",
+            "Phase 8: Endgame mastery (parallel)",
+            "Phase 8: Endgame-Meisterschaft (parallel)",
+            "Finalize mastery goals and redundancy.",
+            "Meisterschaftsziele und Redundanz finalisieren.");
+        phase8.AddChild(CreateTodoTask(
+            "todo.carpentry6",
+            "Carpentry >= 6",
+            "Tischlerei >= 6",
+            "Auto from session skill levels.",
+            "Automatisch aus Session-Skillleveln."));
+        phase8.AddChild(CreateTodoTask(
+            "todo.books_twelve",
+            "At least 12 books completed",
+            "Mindestens 12 Bücher erledigt",
+            "Auto from Books tracker.",
+            "Automatisch aus Bücher-Tracker."));
+        phase8.AddChild(CreateTodoTask(
+            "todo.recipes_thirty",
+            "At least 30 recipes learned",
+            "Mindestens 30 Rezepte gelernt",
+            "Auto from Recipe tracker.",
+            "Automatisch aus Rezepte-Tracker."));
+        phase8.AddChild(CreateTodoTask(
+            "todo.backup_power_water",
+            "Backup power + backup water ready",
+            "Backup-Strom + Backup-Wasser bereit",
+            "Manual resilience validation step.",
+            "Manueller Resilienz-Check."));
+
+        var phase9 = CreateTodoTask(
+            "todo.phase9",
+            "Phase 9: Seasonal self-sufficiency (sequential)",
+            "Phase 9: Saisonale Selbstversorgung (nacheinander)",
+            "Expand sustainable food and gear systems.",
+            "Nachhaltige Versorgungs- und Ausrüstungssysteme ausbauen.");
+        phase9.AddChild(CreateTodoTask(
+            "todo.fishing4_or_trapping3",
+            "Fishing >= 4 or Trapping >= 3",
+            "Angeln >= 4 oder Fallenstellen >= 3",
+            "Auto from session skill levels.",
+            "Automatisch aus Session-Skillleveln."));
+        phase9.AddChild(CreateTodoTask(
+            "todo.foraging5",
+            "Foraging >= 5",
+            "Sammeln >= 5",
+            "Auto from session skill levels.",
+            "Automatisch aus Session-Skillleveln."));
+        phase9.AddChild(CreateTodoTask(
+            "todo.tailoring4",
+            "Tailoring >= 4",
+            "Schneidern >= 4",
+            "Auto from session skill levels.",
+            "Automatisch aus Session-Skillleveln."));
+        phase9.AddChild(CreateTodoTask(
+            "todo.books_fifteen",
+            "At least 15 books completed",
+            "Mindestens 15 Bücher erledigt",
+            "Auto from Books tracker.",
+            "Automatisch aus Bücher-Tracker."));
+        phase9.AddChild(CreateTodoTask(
+            "todo.food_stock_month",
+            "Build a one-month food reserve",
+            "Einen Lebensmittelvorrat für einen Monat anlegen",
+            "Manual sustainability validation step.",
+            "Manueller Nachhaltigkeits-Check."));
+
+        var phase10 = CreateTodoTask(
+            "todo.phase10",
+            "Phase 10: Mastery and redundancy (parallel)",
+            "Phase 10: Meisterschaft und Redundanz (parallel)",
+            "Harden your world state for long campaigns.",
+            "Die Welt für sehr lange Runs absichern.");
+        phase10.AddChild(CreateTodoTask(
+            "todo.electrical6_or_metal6",
+            "Electrical >= 6 or Metalworking >= 6",
+            "Elektro >= 6 oder Metallbearbeitung >= 6",
+            "Auto from session skill levels.",
+            "Automatisch aus Session-Skillleveln."));
+        phase10.AddChild(CreateTodoTask(
+            "todo.mechanics7",
+            "Mechanics >= 7",
+            "Mechanik >= 7",
+            "Auto from session skill levels.",
+            "Automatisch aus Session-Skillleveln."));
+        phase10.AddChild(CreateTodoTask(
+            "todo.firstaid5_or_tailoring6",
+            "First Aid >= 5 or Tailoring >= 6",
+            "Erste Hilfe >= 5 oder Schneidern >= 6",
+            "Auto from session skill levels.",
+            "Automatisch aus Session-Skillleveln."));
+        phase10.AddChild(CreateTodoTask(
+            "todo.recipes_forty",
+            "At least 40 recipes learned",
+            "Mindestens 40 Rezepte gelernt",
+            "Auto from Recipe tracker.",
+            "Automatisch aus Rezepte-Tracker."));
+        phase10.AddChild(CreateTodoTask(
+            "todo.multibase_logistics",
+            "Maintain logistics between multiple bases",
+            "Logistik zwischen mehreren Basen aufrechterhalten",
+            "Manual late-game validation step.",
+            "Manueller Endgame-Check."));
+
+        return [phase1, phase2, phase3, phase4, phase5, phase6, phase7, phase8, phase9, phase10];
+    }
+
+    private TodoTaskViewModel CreateTodoTask(
+        string id,
+        string englishTitle,
+        string germanTitle,
+        string englishDetail = "",
+        string germanDetail = "")
+    {
+        return new TodoTaskViewModel(
+            id,
+            L(englishTitle, germanTitle),
+            L(englishDetail, germanDetail),
+            L("Auto", "Auto"),
+            L("Manual", "Manuell"),
+            L("Open", "Offen"));
+    }
+
+    private void RegisterTodoTaskRecursive(TodoTaskViewModel node)
+    {
+        _todoItemsById[node.Id] = node;
+
+        if (node.CanManuallyCheck)
+        {
+            node.PropertyChanged += OnTodoTaskPropertyChanged;
+            _todoLeafItems.Add(node);
+        }
+
+        foreach (var child in node.Children)
+        {
+            RegisterTodoTaskRecursive(child);
+        }
+    }
+
+    private async void OnTodoTaskPropertyChanged(object? sender, PropertyChangedEventArgs eventArgs)
+    {
+        if (_suppressTodoStateWrite ||
+            sender is not TodoTaskViewModel task ||
+            eventArgs.PropertyName != nameof(TodoTaskViewModel.IsManualChecked))
+        {
+            return;
+        }
+
+        if (task.IsManualChecked)
+        {
+            _state.TodoManualChecks[task.Id] = true;
+        }
+        else
+        {
+            _state.TodoManualChecks.Remove(task.Id);
+        }
+
+        UpdateTodoProgress();
+        await SaveStateAsync();
+    }
+
+    private void RefreshTodoAutoStates()
+    {
+        if (_todoLeafItems.Count == 0)
+        {
+            UpdateTodoProgress();
+            return;
+        }
+
+        foreach (var task in _todoLeafItems)
+        {
+            task.IsAutoCompleted = EvaluateTodoAutoCompletion(task.Id);
+        }
+
+        UpdateTodoProgress();
+    }
+
+    private void UpdateTodoProgress()
+    {
+        var total = _todoLeafItems.Count;
+        if (total == 0)
+        {
+            TodoProgress = "0 / 0";
+            return;
+        }
+
+        var done = _todoLeafItems.Count(task => task.IsCompleted);
+        TodoProgress = $"{done} / {total}";
+    }
+
+    private bool EvaluateTodoAutoCompletion(string taskId)
+    {
+        return taskId switch
+        {
+            "todo.books_two" => CountCompletedBooks() >= 2,
+            "todo.magazines_one" => CountCompletedMagazines() >= 1,
+            "todo.carpentry2" => GetSkillLevel("carpentry", "woodwork") >= 2,
+            "todo.read_carpentry1" => HasBookTierCompleted("carpentry", 1, "woodwork"),
+            "todo.read_cooking1" => HasBookTierCompleted("cooking", 1),
+            "todo.read_mechanics1" => HasBookTierCompleted("mechanics", 1, "mechanic"),
+            "todo.hotwire" => GetSkillLevel("mechanics", "mechanic") >= 2 &&
+                              GetSkillLevel("electrical", "electricity", "electrician") >= 1,
+            "todo.generator_knowledge" => HasGeneratorKnowledge(),
+            "todo.books_five" => CountCompletedBooks() >= 5,
+            "todo.magazines_three" => CountCompletedMagazines() >= 3,
+            "todo.recipes_ten" => CountCompletedRecipes() >= 10,
+            "todo.carpentry4" => GetSkillLevel("carpentry", "woodwork") >= 4,
+            "todo.cooking_or_farming" => GetSkillLevel("cooking") >= 4 || GetSkillLevel("farming") >= 2,
+            "todo.maintenance3" => GetSkillLevel("maintenance") >= 3,
+            "todo.aiming3_or_melee5" => GetSkillLevel("aiming") >= 3 ||
+                                        GetSkillLevel("axe") >= 5 ||
+                                        GetSkillLevel("longblunt") >= 5 ||
+                                        GetSkillLevel("shortblunt") >= 5 ||
+                                        GetSkillLevel("longblade") >= 5 ||
+                                        GetSkillLevel("shortblade") >= 5 ||
+                                        GetSkillLevel("spear") >= 5,
+            "todo.books_eight" => CountCompletedBooks() >= 8,
+            "todo.magazines_five" => CountCompletedMagazines() >= 5,
+            "todo.recipes_twenty" => CountCompletedRecipes() >= 20,
+            "todo.electrical4_or_metal4" => GetSkillLevel("electrical", "electricity", "electrician") >= 4 ||
+                                            GetSkillLevel("metalworking", "metalwelding", "metalwork") >= 4,
+            "todo.mechanics5" => GetSkillLevel("mechanics", "mechanic") >= 5,
+            "todo.cooking6_or_farming4" => GetSkillLevel("cooking") >= 6 || GetSkillLevel("farming") >= 4,
+            "todo.firstaid3" => GetSkillLevel("firstaid", "doctor") >= 3,
+            "todo.carpentry6" => GetSkillLevel("carpentry", "woodwork") >= 6,
+            "todo.books_twelve" => CountCompletedBooks() >= 12,
+            "todo.recipes_thirty" => CountCompletedRecipes() >= 30,
+            "todo.fishing4_or_trapping3" => GetSkillLevel("fishing") >= 4 || GetSkillLevel("trapping") >= 3,
+            "todo.foraging5" => GetSkillLevel("foraging", "forage") >= 5,
+            "todo.tailoring4" => GetSkillLevel("tailoring", "tailor") >= 4,
+            "todo.books_fifteen" => CountCompletedBooks() >= 15,
+            "todo.electrical6_or_metal6" => GetSkillLevel("electrical", "electricity", "electrician") >= 6 ||
+                                            GetSkillLevel("metalworking", "metalwelding", "metalwork") >= 6,
+            "todo.mechanics7" => GetSkillLevel("mechanics", "mechanic") >= 7,
+            "todo.firstaid5_or_tailoring6" => GetSkillLevel("firstaid", "doctor") >= 5 ||
+                                              GetSkillLevel("tailoring", "tailor") >= 6,
+            "todo.recipes_forty" => CountCompletedRecipes() >= 40,
+            _ => false,
+        };
+    }
+
+    private bool HasGeneratorKnowledge()
+    {
+        if (GetSkillLevel("electrical", "electricity", "electrician") >= 3)
+        {
+            return true;
+        }
+
+        return _magazineItems.Any(item =>
+            item.IsChecked &&
+            (
+                item.Name.Contains("generator", StringComparison.OrdinalIgnoreCase) ||
+                item.GermanName.Contains("generator", StringComparison.OrdinalIgnoreCase) ||
+                item.Detail.Contains("generator", StringComparison.OrdinalIgnoreCase)
+            ));
+    }
+
+    private int CountCompletedBooks() => _bookItems.Count(item => item.IsChecked);
+
+    private int CountCompletedMagazines() => _magazineItems.Count(item => item.IsChecked);
+
+    private int CountCompletedRecipes() => _recipeItems.Count(item => item.IsChecked);
+
+    private bool HasBookTierCompleted(string category, int level, params string[] additionalCategoryAliases)
+    {
+        var allAliases = new List<string> { category };
+        allAliases.AddRange(additionalCategoryAliases);
+        return _bookItems.Any(book =>
+            book.IsChecked &&
+            ResolveBookLevel(book) == level &&
+            allAliases.Any(alias => NormalizeSkillKey(alias).Equals(NormalizeSkillKey(book.Category), StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private int GetSkillLevel(params string[] categoryAliases)
+    {
+        if (categoryAliases.Length == 0 || SessionSkills.Count == 0)
+        {
+            return 0;
+        }
+
+        var levels = SessionSkills
+            .GroupBy(skill => NormalizeSkillKey(skill.Name), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.Max(entry => entry.Level), StringComparer.OrdinalIgnoreCase);
+
+        var aliases = categoryAliases
+            .Select(alias => NormalizeSkillKey(alias))
+            .Where(alias => !string.IsNullOrWhiteSpace(alias))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var alias in aliases.ToArray())
+        {
+            switch (alias)
+            {
+                case "woodwork":
+                    aliases.Add("carpentry");
+                    break;
+                case "carpentry":
+                    aliases.Add("woodwork");
+                    break;
+                case "electricity":
+                case "electrician":
+                    aliases.Add("electrical");
+                    break;
+                case "electrical":
+                    aliases.Add("electricity");
+                    aliases.Add("electrician");
+                    break;
+                case "mechanic":
+                    aliases.Add("mechanics");
+                    break;
+                case "mechanics":
+                    aliases.Add("mechanic");
+                    break;
+            }
+        }
+
+        var best = 0;
+        foreach (var alias in aliases)
+        {
+            if (levels.TryGetValue(alias, out var level) && level > best)
+            {
+                best = level;
+            }
+        }
+
+        return best;
     }
 
     private async void SessionTimerOnTick(object? sender, EventArgs eventArgs)
@@ -1214,7 +1837,7 @@ public partial class MainWindowViewModel : ViewModelBase
                     ("in_inventory", L("In Inventory", "Im Inventar")),
                     ("seen_inventory", L("Seen In Inventory", "War im Inventar")),
                     ("read", L("Read", "Gelesen")),
-                    ("obsolete", L("No Longer Needed", "Nicht mehr benoetigt")),
+                    ("obsolete", L("No Longer Needed", "Nicht mehr benötigt")),
                     ("checked", L("Checked", "Abgehakt")),
                     ("unchecked", L("Unchecked", "Nicht abgehakt"))));
 
@@ -1287,10 +1910,13 @@ public partial class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(BookFilterLabelText));
         OnPropertyChanged(nameof(MagazineFilterLabelText));
         OnPropertyChanged(nameof(RecipeFilterLabelText));
+        OnPropertyChanged(nameof(TodoSubtitleText));
         OnPropertyChanged(nameof(TwitchButtonText));
         OnPropertyChanged(nameof(BooksTabHeader));
         OnPropertyChanged(nameof(MagazinesTabHeader));
         OnPropertyChanged(nameof(RecipesTabHeader));
+        OnPropertyChanged(nameof(TodoTabHeader));
+        RebuildTodoPlan();
         UpdateReleaseVersionText();
     }
 
@@ -1402,6 +2028,9 @@ public partial class MainWindowViewModel : ViewModelBase
                 .Where(id => !string.IsNullOrWhiteSpace(id))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
+            _state.TodoManualChecks = _state.TodoManualChecks
+                .Where(entry => entry.Value && !string.IsNullOrWhiteSpace(entry.Key))
+                .ToDictionary(entry => entry.Key, entry => true, StringComparer.OrdinalIgnoreCase);
             await _appStateService.SaveAsync(_state);
         }
         catch

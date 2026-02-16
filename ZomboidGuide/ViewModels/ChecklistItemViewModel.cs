@@ -1,4 +1,4 @@
-using CommunityToolkit.Mvvm.ComponentModel;
+﻿using CommunityToolkit.Mvvm.ComponentModel;
 using Avalonia.Media;
 using ZomboidGuide.Models;
 
@@ -124,8 +124,7 @@ public sealed partial class ChecklistItemViewModel : ViewModelBase
             }
 
             if (SessionState.StartsWith("No Longer Needed", System.StringComparison.OrdinalIgnoreCase) ||
-                SessionState.StartsWith("Nicht mehr benötigt", System.StringComparison.OrdinalIgnoreCase) ||
-                SessionState.StartsWith("Nicht mehr benoetigt", System.StringComparison.OrdinalIgnoreCase))
+                SessionState.StartsWith("Nicht mehr benötigt", System.StringComparison.OrdinalIgnoreCase))
             {
                 return SessionState.StartsWith("Nicht mehr", System.StringComparison.OrdinalIgnoreCase)
                     ? "Nicht nötig"
@@ -174,8 +173,7 @@ public sealed partial class ChecklistItemViewModel : ViewModelBase
             }
 
             if (SessionState.StartsWith("No Longer Needed", System.StringComparison.OrdinalIgnoreCase) ||
-                SessionState.StartsWith("Nicht mehr benötigt", System.StringComparison.OrdinalIgnoreCase) ||
-                SessionState.StartsWith("Nicht mehr benoetigt", System.StringComparison.OrdinalIgnoreCase))
+                SessionState.StartsWith("Nicht mehr benötigt", System.StringComparison.OrdinalIgnoreCase))
             {
                 return ObsoleteBadgeBrush;
             }

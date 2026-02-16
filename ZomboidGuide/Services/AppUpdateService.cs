@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
@@ -38,7 +38,7 @@ public sealed class AppUpdateService
             {
                 Success = false,
                 CurrentVersion = currentVersion,
-                Message = "Ungueltiges GitHub-Repository. Format: owner/repo",
+                Message = "Ungültiges GitHub-Repository. Format: owner/repo",
             };
         }
 
@@ -56,7 +56,7 @@ public sealed class AppUpdateService
 
         if (string.IsNullOrWhiteSpace(updateResult.DownloadUrl))
         {
-            errorMessage = "Kein Download-Link fuer das Update vorhanden.";
+            errorMessage = "Kein Download-Link für das Update vorhanden.";
             return false;
         }
 
@@ -222,7 +222,7 @@ public sealed class AppUpdateService
             {
                 Success = false,
                 CurrentVersion = currentVersion,
-                Message = $"GitHub Release-Version ungueltig: {rawVersion}",
+                Message = $"GitHub Release-Version ungültig: {rawVersion}",
             };
         }
 
@@ -249,7 +249,7 @@ public sealed class AppUpdateService
             ExeName = "ZomboidGuide.exe",
             Notes = string.IsNullOrWhiteSpace(release.Body) ? string.Empty : release.Body.Trim(),
             Message = hasNewerVersion
-                ? $"Update verfuegbar: {availableVersion} (GitHub)"
+                ? $"Update verfügbar: {availableVersion} (GitHub)"
                 : $"Bereits aktuell ({currentVersion})",
         };
     }

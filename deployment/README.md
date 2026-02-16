@@ -24,7 +24,7 @@ Ergebnis:
 
 ## 3) GitHub Releases bereitstellen
 
-Die App bezieht Updates jetzt ausschliesslich aus GitHub Releases.
+Die App bezieht Updates jetzt ausschließlich aus GitHub Releases.
 Als Quelle wird in der App ein Repository angegeben, z. B.:
 - `MietzeMatze/ZomboidGuide-Releases`
 - oder eine GitHub-URL auf dieses Repo
@@ -39,11 +39,11 @@ Empfohlen ist das Asset:
   - `owner/repo` (z. B. `MietzeMatze/ZomboidGuide-Releases`)
   - alternativ GitHub-URL
 - `Auto-Updatecheck` aktivieren.
-- `Nach Update suchen` klicken (oder beim Start automatisch pruefen).
-- Bei verfuegbarer neuer Version: `Update installieren`.
+- `Nach Update suchen` klicken (oder beim Start automatisch prüfen).
+- Bei verfügbarer neuer Version: `Update installieren`.
 
-Die App laedt den Installer aus GitHub, startet ihn und beendet sich danach.
-Dadurch ist die Installation auch sauber ueber Windows deinstallierbar (Apps & Features).
+Die App lädt den Installer aus GitHub, startet ihn und beendet sich danach.
+Dadurch ist die Installation auch sauber über Windows deinstallierbar (Apps & Features).
 
 ## 5) Automatisches GitHub Release in separates Repo
 
@@ -69,7 +69,7 @@ Der Workflow:
 1. baut die App im Release-Modus
 2. erstellt `artifacts/publish/app` und `artifacts/update-feed`
 3. erstellt mit Inno Setup einen Installer (`.exe`)
-4. erstellt Release im Ziel-Repo und laedt Installer + Checksummen hoch
+4. erstellt Release im Ziel-Repo und lädt Installer + Checksummen hoch
 
 Beispiel:
 
@@ -85,11 +85,11 @@ Script:
 
 Was es macht:
 1. holt Tags von `origin`
-2. ermittelt den hoechsten `vX.Y.Z`-Tag
-3. erhoeht Patch um `+0.0.1`
+2. ermittelt den höchsten `vX.Y.Z`-Tag
+3. erhöht Patch um `+0.0.1`
 4. setzt `Version`, `AssemblyVersion`, `FileVersion` im `.csproj` auf die neue Version
 5. baut die Solution
-6. committed die Versionsaenderung (nur bei erfolgreichem Build)
+6. committed die Versionsänderung (nur bei erfolgreichem Build)
 7. erstellt Tag nur bei erfolgreichem Build
 8. pusht Branch und Tag
 

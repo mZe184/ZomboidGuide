@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.IO;
@@ -168,7 +168,7 @@ public sealed class SessionSyncService
                 LearnedRecipeItemIds = learnedRecipes.ToArray(),
                 SkillLevels = skills.ToArray(),
                 Message =
-                    $"Session geladen: Buecher inv/gelesen/obsolete {matchedBooks.Count}/{readBooks.Count}/{obsoleteBooks.Count}, " +
+                    $"Session geladen: Bücher inv/gelesen/obsolete {matchedBooks.Count}/{readBooks.Count}/{obsoleteBooks.Count}, " +
                     $"Magazine inv/gelesen {matchedMagazines.Count}/{readMagazines.Count}, Rezepte gelernt {learnedRecipes.Count}",
             };
         }
@@ -253,7 +253,7 @@ public sealed class SessionSyncService
 
     private static string CreatePlayersDbSnapshot(string playersDbPath)
     {
-        var sourceDirectory = Path.GetDirectoryName(playersDbPath) ?? throw new InvalidOperationException("Ungueltiger Save-Pfad.");
+        var sourceDirectory = Path.GetDirectoryName(playersDbPath) ?? throw new InvalidOperationException("Ungültiger Save-Pfad.");
         var tempDirectory = Path.Combine(Path.GetTempPath(), "ZomboidGuide", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempDirectory);
 

@@ -182,6 +182,10 @@
             <Setter Property="Padding" Value="10,6"/>
         </Style>
 
+        <Style Selector="TextBlock.tab-title">
+            <Setter Property="FontSize" Value="12"/>
+        </Style>
+
         <Style Selector="ComboBox.tab-filter">
             <Setter Property="MinWidth" Value="150"/>
             <Setter Property="Height" Value="28"/>
