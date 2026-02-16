@@ -39,7 +39,7 @@
     "Carpentry level \u003e= 2":  "Уровень столярного дела \u003e= 2",
     "Carpentry level \u003e= 4":  "Уровень столярного дела \u003e= 4",
     "Catalog loaded: {0} entries":  "Каталог загружен: записи {0}",
-    "Catalog loaded: {0} entries ({1} new)":  "Каталог загружен: {0} записей ({1} новый)",
+    "Catalog loaded: {0} entries ({1} new)":  "Каталог загружен: записи {1} (новый {1})",
     "Check For Update":  "Проверить наличие обновлений",
     "Checked":  "Проверено",
     "Clear All Checks":  "Очистить все проверки",

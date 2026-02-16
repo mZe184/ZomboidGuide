@@ -39,7 +39,7 @@
     "Carpentry level \u003e= 2":  "Marangozluk seviyesi \u003e= 2",
     "Carpentry level \u003e= 4":  "Marangozluk seviyesi \u003e= 4",
     "Catalog loaded: {0} entries":  "Katalog yüklendi: {0} girişleri",
-    "Catalog loaded: {0} entries ({1} new)":  "Katalog yüklendi: {0} girişler ({1} yeni)",
+    "Catalog loaded: {0} entries ({1} new)":  "Katalog yüklendi: {1} girişleri ({1} yeni)",
     "Check For Update":  "Güncellemeyi Kontrol Et",
     "Checked":  "İşaretlendi",
     "Clear All Checks":  "Tüm Kontrolleri Temizle",
