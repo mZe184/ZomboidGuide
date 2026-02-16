@@ -12,7 +12,7 @@
         Icon="/Images/ZGSmallIcon.ico"
         MinWidth="1680"
         MinHeight="1020"
-        Title="MietzeMatze's Zomboid Guide">
+        Title="{Binding WindowTitleText}">
     <Design.DataContext>
         <vm:MainWindowViewModel/>
     </Design.DataContext>

@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Globalization;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -26,6 +27,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private readonly GuideCatalogService _guideCatalogService = new();
     private readonly SessionSyncService _sessionSyncService = new();
     private readonly AppUpdateService _appUpdateService = new();
+    private readonly UiLocalizationService _uiLocalizationService = new();
 
     private readonly DispatcherTimer _sessionTimer = new() { Interval = TimeSpan.FromMinutes(2) };
     private readonly DispatcherTimer _sessionWatcherDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(900) };
@@ -109,10 +111,10 @@ public partial class MainWindowViewModel : ViewModelBase
     private bool autoUpdateCheck = true;
 
     [ObservableProperty]
-    private string statusMessage = "Loading data ...";
+    private string statusMessage = string.Empty;
 
     [ObservableProperty]
-    private string updateStatusMessage = "Update: not checked yet";
+    private string updateStatusMessage = string.Empty;
 
     [ObservableProperty]
     private string releaseVersionText = "Version: -";
@@ -124,13 +126,13 @@ public partial class MainWindowViewModel : ViewModelBase
     private bool isUpdatePromptVisible;
 
     [ObservableProperty]
-    private string dataSource = "Not loaded yet";
+    private string dataSource = string.Empty;
 
     [ObservableProperty]
-    private string lastSyncText = "No catalog sync yet";
+    private string lastSyncText = string.Empty;
 
     [ObservableProperty]
-    private string lastSessionSyncText = "No session sync yet";
+    private string lastSessionSyncText = string.Empty;
 
     [ObservableProperty]
     private string bookProgress = "0 / 0";
@@ -150,7 +152,9 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private bool isBusy;
 
-    public string HeaderTitleText => "MietzeMatze's Zomboid Guide";
+    public string WindowTitleText => L("MietzeMatze's Zomboid Guide", "MietzeMatze's Zomboid Guide");
+
+    public string HeaderTitleText => L("MietzeMatze's Zomboid Guide", "MietzeMatze's Zomboid Guide");
 
     public string HeaderSubtitleText => L(
         "Track inventory books and view current session skills with levels.",
@@ -200,9 +204,10 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             if (_latestUpdateResult?.AvailableVersion is not null)
             {
-                return L(
-                    $"A newer version ({_latestUpdateResult.AvailableVersion}) is available. Install now?",
-                    $"Eine neuere Version ({_latestUpdateResult.AvailableVersion}) ist verfügbar. Jetzt installieren?");
+                return Lf(
+                    "A newer version ({0}) is available. Install now?",
+                    "Eine neuere Version ({0}) ist verfügbar. Jetzt installieren?",
+                    _latestUpdateResult.AvailableVersion);
             }
 
             return L(
@@ -241,10 +246,20 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public MainWindowViewModel()
     {
+        ApplyInitialUiTextDefaults();
         _sessionTimer.Tick += SessionTimerOnTick;
         _sessionWatcherDebounceTimer.Tick += SessionWatcherDebounceOnTick;
         _sessionTimer.Start();
         _ = InitializeAsync();
+    }
+
+    private void ApplyInitialUiTextDefaults()
+    {
+        StatusMessage = L("Loading data ...", "Lade Daten ...");
+        UpdateStatusMessage = L("Update: not checked yet", "Update: noch nicht geprüft");
+        DataSource = L("Not loaded yet", "Noch nicht geladen");
+        LastSyncText = L("No catalog sync yet", "Noch keine Katalog-Synchronisierung");
+        LastSessionSyncText = L("No session sync yet", "Noch keine Session-Synchronisierung");
     }
 
     partial void OnSearchTextChanged(string value)
@@ -389,7 +404,7 @@ public partial class MainWindowViewModel : ViewModelBase
         }
 
         GamePath = detectedPath;
-        StatusMessage = L($"Path detected: {detectedPath}", $"Pfad erkannt: {detectedPath}");
+        StatusMessage = Lf("Path detected: {0}", "Pfad erkannt: {0}", detectedPath);
         await SaveStateAsync();
     }
 
@@ -406,7 +421,7 @@ public partial class MainWindowViewModel : ViewModelBase
         }
         catch (Exception exception)
         {
-            StatusMessage = L($"Could not open link: {exception.Message}", $"Konnte Link nicht öffnen: {exception.Message}");
+            StatusMessage = Lf("Could not open link: {0}", "Konnte Link nicht öffnen: {0}", exception.Message);
         }
     }
 
@@ -443,9 +458,10 @@ public partial class MainWindowViewModel : ViewModelBase
 
         if (result.UpdateAvailable && result.AvailableVersion is not null)
         {
-            UpdateStatusMessage = L(
-                $"Update available. Version: {result.AvailableVersion}",
-                $"Update verfügbar. Version: {result.AvailableVersion}");
+            UpdateStatusMessage = Lf(
+                "Update available. Version: {0}",
+                "Update verfügbar. Version: {0}",
+                result.AvailableVersion);
 
             if (showPromptForThisSession && !_skipUpdatePromptForSession)
             {
@@ -455,7 +471,7 @@ public partial class MainWindowViewModel : ViewModelBase
         else
         {
             var release = result.AvailableVersion?.ToString() ?? _state.LastKnownReleaseVersion;
-            UpdateStatusMessage = $"Version: {(string.IsNullOrWhiteSpace(release) ? "-" : release)}";
+            UpdateStatusMessage = Lf("Version: {0}", "Version: {0}", string.IsNullOrWhiteSpace(release) ? "-" : release);
             IsUpdatePromptVisible = false;
         }
 
@@ -567,11 +583,11 @@ public partial class MainWindowViewModel : ViewModelBase
             UpdateReleaseVersionText();
 
             LastSyncText = _state.LastSyncAt.HasValue
-                ? L($"Last catalog sync: {_state.LastSyncAt:dd.MM.yyyy HH:mm}", $"Letzte Katalog-Sync: {_state.LastSyncAt:dd.MM.yyyy HH:mm}")
+                ? Lf("Last catalog sync: {0:dd.MM.yyyy HH:mm}", "Letzte Katalog-Sync: {0:dd.MM.yyyy HH:mm}", _state.LastSyncAt)
                 : L("No catalog sync yet", "Noch keine Katalog-Synchronisierung");
 
             LastSessionSyncText = _state.LastSessionSyncAt.HasValue
-                ? L($"Last session sync: {_state.LastSessionSyncAt:dd.MM.yyyy HH:mm}", $"Letzte Session-Sync: {_state.LastSessionSyncAt:dd.MM.yyyy HH:mm}")
+                ? Lf("Last session sync: {0:dd.MM.yyyy HH:mm}", "Letzte Session-Sync: {0:dd.MM.yyyy HH:mm}", _state.LastSessionSyncAt)
                 : L("No session sync yet", "Noch keine Session-Synchronisierung");
 
             if (string.IsNullOrWhiteSpace(GamePath))
@@ -629,20 +645,23 @@ public partial class MainWindowViewModel : ViewModelBase
             _state.GamePath = GamePath;
             _state.IncludeMods = IncludeMods;
             _state.LastSyncAt = DateTimeOffset.Now;
-            LastSyncText = L(
-                $"Last catalog sync: {_state.LastSyncAt:dd.MM.yyyy HH:mm}",
-                $"Letzte Katalog-Sync: {_state.LastSyncAt:dd.MM.yyyy HH:mm}");
+            LastSyncText = Lf(
+                "Last catalog sync: {0:dd.MM.yyyy HH:mm}",
+                "Letzte Katalog-Sync: {0:dd.MM.yyyy HH:mm}",
+                _state.LastSyncAt);
 
             await SaveStateAsync();
             StatusMessage = hadKnownCatalog && newCatalogIds.Count > 0
-                ? L($"Catalog loaded: {_allItems.Count} entries ({newCatalogIds.Count} new)",
-                    $"Katalog geladen: {_allItems.Count} Einträge ({newCatalogIds.Count} neu)")
-                : L($"Catalog loaded: {_allItems.Count} entries",
-                    $"Katalog geladen: {_allItems.Count} Einträge");
+                ? Lf("Catalog loaded: {0} entries ({1} new)",
+                    "Katalog geladen: {0} Einträge ({1} neu)",
+                    _allItems.Count, newCatalogIds.Count)
+                : Lf("Catalog loaded: {0} entries",
+                    "Katalog geladen: {0} Einträge",
+                    _allItems.Count);
         }
         catch (Exception exception)
         {
-            StatusMessage = L($"Failed to load data: {exception.Message}", $"Fehler beim Laden: {exception.Message}");
+            StatusMessage = Lf("Failed to load data: {0}", "Fehler beim Laden: {0}", exception.Message);
         }
         finally
         {
@@ -671,7 +690,7 @@ public partial class MainWindowViewModel : ViewModelBase
             {
                 if (isManual)
                 {
-                    StatusMessage = L($"Session sync failed: {result.Message}", result.Message);
+                    StatusMessage = Lf("Session sync failed: {0}", "Session-Sync fehlgeschlagen: {0}", result.Message);
                 }
 
                 return;
@@ -689,14 +708,15 @@ public partial class MainWindowViewModel : ViewModelBase
             RefreshTodoAutoStates();
 
             _state.LastSessionSyncAt = DateTimeOffset.Now;
-            LastSessionSyncText = L(
-                $"Last session sync: {_state.LastSessionSyncAt:dd.MM.yyyy HH:mm}",
-                $"Letzte Session-Sync: {_state.LastSessionSyncAt:dd.MM.yyyy HH:mm}");
+            LastSessionSyncText = Lf(
+                "Last session sync: {0:dd.MM.yyyy HH:mm}",
+                "Letzte Session-Sync: {0:dd.MM.yyyy HH:mm}",
+                _state.LastSessionSyncAt);
             await SaveStateAsync();
 
             StatusMessage = L(
                 $"Session synced successfully ({result.PlayerName})",
-                $"{result.Message} ({result.PlayerName})");
+                $"Session erfolgreich synchronisiert ({result.PlayerName})");
         }
         finally
         {
@@ -826,7 +846,7 @@ public partial class MainWindowViewModel : ViewModelBase
             });
         }
 
-        SessionSkillsHeader = L($"Session Skills ({SessionSkills.Count})", $"Session-Skills ({SessionSkills.Count})");
+        SessionSkillsHeader = Lf("Session Skills ({0})", "Session-Skills ({0})", SessionSkills.Count);
     }
 
     private void RebuildItems(GuideCatalog catalog)
@@ -1152,7 +1172,7 @@ public partial class MainWindowViewModel : ViewModelBase
         }
         catch (Exception exception)
         {
-            StatusMessage = L($"Could not open link: {exception.Message}", $"Konnte Link nicht öffnen: {exception.Message}");
+            StatusMessage = Lf("Could not open link: {0}", "Konnte Link nicht öffnen: {0}", exception.Message);
         }
     }
 
@@ -1947,19 +1967,29 @@ public partial class MainWindowViewModel : ViewModelBase
     private void ApplyUiLanguage()
     {
         RefreshStatusFilters();
-        SessionSkillsHeader = L(
-            $"Session Skills ({SessionSkills.Count})",
-            $"Session-Skills ({SessionSkills.Count})");
+        SessionSkillsHeader = Lf("Session Skills ({0})", "Session-Skills ({0})", SessionSkills.Count);
 
         LastSyncText = _state.LastSyncAt.HasValue
-            ? L($"Last catalog sync: {_state.LastSyncAt:dd.MM.yyyy HH:mm}", $"Letzte Katalog-Sync: {_state.LastSyncAt:dd.MM.yyyy HH:mm}")
+            ? Lf("Last catalog sync: {0:dd.MM.yyyy HH:mm}", "Letzte Katalog-Sync: {0:dd.MM.yyyy HH:mm}", _state.LastSyncAt)
             : L("No catalog sync yet", "Noch keine Katalog-Synchronisierung");
 
         LastSessionSyncText = _state.LastSessionSyncAt.HasValue
-            ? L($"Last session sync: {_state.LastSessionSyncAt:dd.MM.yyyy HH:mm}", $"Letzte Session-Sync: {_state.LastSessionSyncAt:dd.MM.yyyy HH:mm}")
+            ? Lf("Last session sync: {0:dd.MM.yyyy HH:mm}", "Letzte Session-Sync: {0:dd.MM.yyyy HH:mm}", _state.LastSessionSyncAt)
             : L("No session sync yet", "Noch keine Session-Synchronisierung");
 
+        if (_latestUpdateResult is null)
+        {
+            UpdateStatusMessage = L("Update: not checked yet", "Update: noch nicht geprüft");
+        }
+
+        if (_catalogItems.Count == 0)
+        {
+            DataSource = L("Not loaded yet", "Noch nicht geladen");
+        }
+
         OnPropertyChanged(nameof(HeaderSubtitleText));
+        OnPropertyChanged(nameof(HeaderTitleText));
+        OnPropertyChanged(nameof(WindowTitleText));
         OnPropertyChanged(nameof(GamePathWatermarkText));
         OnPropertyChanged(nameof(ModsOffText));
         OnPropertyChanged(nameof(ModsOnText));
@@ -2036,7 +2066,13 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private string L(string english, string german)
     {
-        return IsGermanUi ? german : english;
+        return _uiLocalizationService.Translate(_state.LanguageCode, english, german);
+    }
+
+    private string Lf(string englishTemplate, string germanTemplate, params object?[] args)
+    {
+        var localizedTemplate = L(englishTemplate, germanTemplate);
+        return string.Format(CultureInfo.CurrentCulture, localizedTemplate, args);
     }
 
     private bool IsGermanUi => (_state.LanguageCode ?? string.Empty)
