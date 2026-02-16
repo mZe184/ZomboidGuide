@@ -477,6 +477,15 @@
                         <TextBlock Text="{Binding TwitchButtonText}"/>
                     </StackPanel>
                 </Button>
+                <Button Grid.Column="3"  HorizontalAlignment="Right"
+                        Classes="link-button"
+                        Margin="8,0,0,0"
+                        Command="{Binding OpenZickchenTwitchLinkCommand}">
+                    <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right">
+                        <material:MaterialIcon Kind="Twitch" Width="16" Height="16"/>
+                        <TextBlock Text="{Binding TwitchButtonTextZickchen}"  HorizontalAlignment="Right"/>
+                    </StackPanel>
+                </Button>
                 <TextBlock Grid.Row="1"
                            Margin="0,8,0,0"
                            VerticalAlignment="Center"

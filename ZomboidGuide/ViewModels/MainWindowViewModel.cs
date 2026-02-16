@@ -229,6 +229,8 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public string TwitchButtonText => L("MietzeMatze on Twitch", "MietzeMatze auf Twitch");
 
+    public string TwitchButtonTextZickchen => L("for Zickchen69 on Twitch", "für Zickchen69 auf Twitch");
+
     public string LanguageLabelText => L("Language", "Sprache");
 
     public string BookFilterLabelText => L("Books Filter", "Bücher-Filter");
@@ -1137,6 +1139,23 @@ public partial class MainWindowViewModel : ViewModelBase
         }
     }
 
+    [RelayCommand]
+    private void OpenZickchenTwitchLink()
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "https://www.twitch.tv/Zickchen69",
+                UseShellExecute = true,
+            });
+        }
+        catch (Exception exception)
+        {
+            StatusMessage = L($"Could not open link: {exception.Message}", $"Konnte Link nicht öffnen: {exception.Message}");
+        }
+    }
+
     private IReadOnlyList<TodoTaskViewModel> BuildTodoTree()
     {
         var phase1 = CreateTodoTask(
@@ -1966,6 +1985,7 @@ public partial class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(RecipeFilterLabelText));
         OnPropertyChanged(nameof(TodoSubtitleText));
         OnPropertyChanged(nameof(TwitchButtonText));
+        OnPropertyChanged(nameof(TwitchButtonTextZickchen));
         OnPropertyChanged(nameof(BooksTabHeader));
         OnPropertyChanged(nameof(MagazinesTabHeader));
         OnPropertyChanged(nameof(RecipesTabHeader));
