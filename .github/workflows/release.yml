@@ -31,9 +31,7 @@ jobs:
         shell: pwsh
         run: |
           $raw = "${{ github.ref_name }}"
-          if ([string]::IsNullOrWhiteSpace($raw)) {
-            throw "github.ref_name is empty."
-          }
+          if ([string]::IsNullOrWhiteSpace($raw)) { throw "github.ref_name is empty." }
 
           $version = if ($raw.StartsWith("v")) { $raw.Substring(1) } else { $raw }
           "APP_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
@@ -50,7 +48,6 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($env:RELEASE_TARGET_REPOSITORY)) {
             throw "Missing repository variable RELEASE_TARGET_REPOSITORY (format: owner/repo)."
           }
-
           if ([string]::IsNullOrWhiteSpace($env:RELEASE_REPO_TOKEN)) {
             throw "Missing secret ZOMBOIDGUIDERELEASES (token with Contents: write on target repo)."
           }
@@ -63,7 +60,7 @@ jobs:
               "User-Agent"  = "zomboidguide-release-workflow"
             }
 
-            $repoApi = "https://api.github.com/repos/$($env:RELEASE_TARGET_REPOSITORY)"
+            $repoApi  = "https://api.github.com/repos/$($env:RELEASE_TARGET_REPOSITORY)"
             $repoInfo = Invoke-RestMethod -Uri $repoApi -Headers $headers -Method Get
             $commitish = $repoInfo.default_branch
 
@@ -94,10 +91,10 @@ jobs:
           $releaseDir = "artifacts/release"
           New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
 
-          $appZip = Join-Path $releaseDir ("ZomboidGuide-{0}-win-x64.zip" -f $env:APP_VERSION)
+          $appZip  = Join-Path $releaseDir ("ZomboidGuide-{0}-win-x64.zip" -f $env:APP_VERSION)
           $feedZip = Join-Path $releaseDir ("ZomboidGuide-{0}-update-feed.zip" -f $env:APP_VERSION)
 
-          if (Test-Path $appZip) { Remove-Item $appZip -Force }
+          if (Test-Path $appZip)  { Remove-Item $appZip -Force }
           if (Test-Path $feedZip) { Remove-Item $feedZip -Force }
 
           Compress-Archive -Path "artifacts/publish/app/*" -DestinationPath $appZip -CompressionLevel Optimal
@@ -113,7 +110,7 @@ jobs:
         run: |
           git fetch --tags --force
 
-          $tag = $env:APP_TAG  # z.B. v1.2.3
+          $tag  = $env:APP_TAG
           $prev = (git tag --list "v*" --sort=-v:refname | Where-Object { $_ -ne $tag } | Select-Object -First 1)
 
           if ([string]::IsNullOrWhiteSpace($prev)) {
@@ -124,16 +121,10 @@ jobs:
             $rangeText = "$prev..$tag"
           }
 
-          if ([string]::IsNullOrWhiteSpace($log)) {
-            $log = "- (keine Commits gefunden)"
-          }
+          if ([string]::IsNullOrWhiteSpace($log)) { $log = "- (keine Commits gefunden)" }
 
-          $notes = @"
-## Changes ($rangeText)
-$log
-"@
-
-          $notes | Set-Content -Path "release-notes.md" -Encoding utf8
+          $notes = "## Changes ($rangeText)`n$log`n"
+          Set-Content -Path "release-notes.md" -Value $notes -Encoding utf8
           Write-Host "Release notes generated."
 
       - name: Create GitHub Release (in Releases repo)
