@@ -234,7 +234,7 @@
         <Border Grid.Row="1"
                 Classes="card"
                 Margin="0,10,0,0">
-            <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto"
+            <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto"
                   ColumnDefinitions="*,*,Auto,Auto">
                 <TextBox Grid.Row="0"
                          Grid.ColumnSpan="4"
@@ -279,16 +279,7 @@
                     </StackPanel>
                 </Button>
 
-                <Button Grid.Row="2"
-                        Grid.Column="2"
-                        Margin="0,8,8,0"
-                        Command="{Binding InstallUpdateCommand}"
-                        IsVisible="{Binding IsUpdateAvailable}">
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                        <material:MaterialIcon Kind="Download" Width="16" Height="16"/>
-                        <TextBlock Text="{Binding InstallUpdateButtonText}"/>
-                    </StackPanel>
-                </Button>
+                
 
                 <TextBlock Grid.Row="3"
                            Grid.Column="1"
@@ -301,8 +292,19 @@
                            MinWidth="300"
                            MaxWidth="300"
                            Text="{Binding UpdateStatusMessage}"/>
-
-                <Border Grid.Row="4"
+                <Button Grid.Row="4"
+                        Grid.ColumnSpan="2"
+                        HorizontalAlignment="Right"
+                        Margin="0,8,0,0"
+                        Command="{Binding InstallUpdateCommand}"
+                        IsVisible="{Binding IsUpdateAvailable}">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <material:MaterialIcon Kind="Download" Width="16" Height="16"/>
+                        <TextBlock Text="{Binding InstallUpdateButtonText}"/>
+                    </StackPanel>
+                </Button>
+                
+                <Border Grid.Row="5"
                         Grid.Column="1"
                         Grid.ColumnSpan="3"
                         Margin="0,8,0,0"
