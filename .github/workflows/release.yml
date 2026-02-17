@@ -1,9 +1,16 @@
+
 name: Build and Publish Binary Release
 
 on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Optional: Tag to build (e.g. v0.1.8). Leave empty to use latest v* tag."
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -34,8 +41,10 @@ jobs:
           }
 
           $version = if ($raw.StartsWith("v")) { $raw.Substring(1) } else { $raw }
+
           "APP_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "APP_TAG=$raw" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
           Write-Host "Release version: $version (tag: $raw)"
 
       - name: Restore
@@ -107,3 +116,40 @@ jobs:
           files: |
             artifacts/release/*.exe
             artifacts/release/SHA256SUMS.txt
+
+  discord:
+    runs-on: ubuntu-latest
+    needs: release
+
+    steps:
+      - name: Post Discord forum thread with release notes
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${DISCORD_WEBHOOK:-}" ]; then
+            echo "Missing secret DISCORD_WEBHOOK"
+            exit 1
+          fi
+
+          TAG="${GITHUB_REF_NAME}"
+          REPO="${GITHUB_REPOSITORY}"
+
+          # Fetch release info (body + url)
+          RELEASE_JSON="$(gh api "repos/${REPO}/releases/tags/${TAG}")"
+          RELEASE_URL="$(echo "$RELEASE_JSON" | jq -r '.html_url')"
+          RELEASE_BODY="$(echo "$RELEASE_JSON" | jq -r '.body // ""')"
+
+          export TAG RELEASE_URL RELEASE_BODY
+
+          # Build Discord post content (single-line python => no indentation issues)
+          CONTENT="$(python3 -c "import os; url=os.environ.get('RELEASE_URL','').strip(); tag=os.environ.get('TAG','').strip(); body=os.environ.get('RELEASE_BODY','').replace('\r\n','\n').strip(); header=f\"✅ **New Release:** {tag}\\n{url}\\n\\n**Release Notes:**\\n\"; max_len=1900; text=header+(body if body else '_(No release notes text found.)_'); text=(text[:max_len-20].rstrip()+'\\n… _(truncated)_') if len(text)>max_len else text; print(text)")"
+
+          TITLE="ZomboidGuide ${TAG}"
+
+          # Forum webhook => create new thread with first post
+          JSON="$(jq -n --arg name "$TITLE" --arg content "$CONTENT" '{name:$name, content:$content}')"
+
+          curl -sS -H "Content-Type: application/json" -d "$JSON" "$DISCORD_WEBHOOK"
