@@ -6,7 +6,7 @@ on:
       - "v*"
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: release-${{ github.ref }}
@@ -17,10 +17,8 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - name: Checkout (full history + tags)
+      - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -31,48 +29,14 @@ jobs:
         shell: pwsh
         run: |
           $raw = "${{ github.ref_name }}"
-          if ([string]::IsNullOrWhiteSpace($raw)) { throw "github.ref_name is empty." }
+          if ([string]::IsNullOrWhiteSpace($raw)) {
+            throw "github.ref_name is empty."
+          }
 
           $version = if ($raw.StartsWith("v")) { $raw.Substring(1) } else { $raw }
           "APP_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "APP_TAG=$raw" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           Write-Host "Release version: $version (tag: $raw)"
-
-      - name: Validate Release Target
-        shell: pwsh
-        env:
-          RELEASE_TARGET_REPOSITORY: ${{ vars.RELEASE_TARGET_REPOSITORY }}
-          RELEASE_TARGET_COMMITISH: ${{ vars.RELEASE_TARGET_COMMITISH }}
-          RELEASE_REPO_TOKEN: ${{ secrets.ZOMBOIDGUIDERELEASES }}
-        run: |
-          if ([string]::IsNullOrWhiteSpace($env:RELEASE_TARGET_REPOSITORY)) {
-            throw "Missing repository variable RELEASE_TARGET_REPOSITORY (format: owner/repo)."
-          }
-          if ([string]::IsNullOrWhiteSpace($env:RELEASE_REPO_TOKEN)) {
-            throw "Missing secret ZOMBOIDGUIDERELEASES (token with Contents: write on target repo)."
-          }
-
-          $commitish = $env:RELEASE_TARGET_COMMITISH
-          if ([string]::IsNullOrWhiteSpace($commitish)) {
-            $headers = @{
-              Authorization = "Bearer $($env:RELEASE_REPO_TOKEN)"
-              Accept        = "application/vnd.github+json"
-              "User-Agent"  = "zomboidguide-release-workflow"
-            }
-
-            $repoApi  = "https://api.github.com/repos/$($env:RELEASE_TARGET_REPOSITORY)"
-            $repoInfo = Invoke-RestMethod -Uri $repoApi -Headers $headers -Method Get
-            $commitish = $repoInfo.default_branch
-
-            if ([string]::IsNullOrWhiteSpace($commitish)) {
-              throw "Could not resolve default branch from target repository API."
-            }
-          }
-
-          "RELEASE_TARGET_REPOSITORY=$($env:RELEASE_TARGET_REPOSITORY)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "RELEASE_TARGET_COMMITISH=$commitish" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          Write-Host "Target repository: $($env:RELEASE_TARGET_REPOSITORY)"
-          Write-Host "Target commitish : $commitish"
 
       - name: Restore
         run: dotnet restore ZomboidGuide.sln
@@ -85,168 +49,61 @@ jobs:
         run: |
           ./deployment/Build-Release.ps1 -Runtime "win-x64" -Configuration "Release" -Version "${env:APP_VERSION}"
 
-      - name: Prepare CI Code Signing (optional)
-        shell: pwsh
-        env:
-          CODESIGN_PFX_BASE64: ${{ secrets.CODESIGN_PFX_BASE64 }}
-          CODESIGN_PFX_PASSWORD: ${{ secrets.CODESIGN_PFX_PASSWORD }}
-          CI_SIGNING_TIMESTAMP_URL: ${{ vars.CI_SIGNING_TIMESTAMP_URL }}
-          CI_SIGNING_FILE_DESCRIPTION: ${{ vars.CI_SIGNING_FILE_DESCRIPTION }}
-          CI_SIGNING_FILE_URL: ${{ vars.CI_SIGNING_FILE_URL }}
-        run: |
-          "CI_SIGNING_ENABLED=false" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
-          if ([string]::IsNullOrWhiteSpace($env:CODESIGN_PFX_BASE64) -or [string]::IsNullOrWhiteSpace($env:CODESIGN_PFX_PASSWORD)) {
-            Write-Host "::warning::CI signing skipped. Set secrets CODESIGN_PFX_BASE64 and CODESIGN_PFX_PASSWORD to enable signing."
-            return
-          }
-
-          $pfxPath = Join-Path $env:RUNNER_TEMP "codesign.pfx"
-          [System.IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:CODESIGN_PFX_BASE64.Trim()))
-
-          if (-not (Test-Path $pfxPath)) {
-            throw "Failed to materialize PFX certificate file."
-          }
-
-          $timestampUrl = if ([string]::IsNullOrWhiteSpace($env:CI_SIGNING_TIMESTAMP_URL)) { "http://timestamp.digicert.com" } else { $env:CI_SIGNING_TIMESTAMP_URL }
-          $description = if ([string]::IsNullOrWhiteSpace($env:CI_SIGNING_FILE_DESCRIPTION)) { "MietzeMatze's Zomboid Guide" } else { $env:CI_SIGNING_FILE_DESCRIPTION }
-          $fileUrl = if ([string]::IsNullOrWhiteSpace($env:CI_SIGNING_FILE_URL)) { "https://github.com/mZe184/ZomboidGuideReleases" } else { $env:CI_SIGNING_FILE_URL }
-
-          "CI_SIGNING_ENABLED=true" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "CI_SIGNING_PFX_PATH=$pfxPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "CI_SIGNING_TIMESTAMP_URL=$timestampUrl" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "CI_SIGNING_FILE_DESCRIPTION=$description" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "CI_SIGNING_FILE_URL=$fileUrl" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          Write-Host "CI signing enabled."
-
-      - name: Sign Published Binaries (optional)
-        if: env.CI_SIGNING_ENABLED == 'true'
-        shell: pwsh
-        env:
-          CODESIGN_PFX_PASSWORD: ${{ secrets.CODESIGN_PFX_PASSWORD }}
-        run: |
-          function Resolve-SigntoolPath {
-            $signtool = Get-Command signtool -ErrorAction SilentlyContinue
-            if ($null -ne $signtool) { return $signtool.Path }
-
-            $roots = @(
-              (Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\bin"),
-              (Join-Path ${env:ProgramFiles} "Windows Kits\10\bin")
-            ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and (Test-Path $_) }
-
-            foreach ($root in $roots) {
-              $versionFolders = Get-ChildItem -Path $root -Directory | Sort-Object Name -Descending
-              foreach ($folder in $versionFolders) {
-                $candidate = Join-Path $folder.FullName "x64\signtool.exe"
-                if (Test-Path $candidate) { return $candidate }
-              }
-            }
-
-            throw "signtool.exe not found."
-          }
-
-          $signtoolPath = Resolve-SigntoolPath
-          $targets = Get-ChildItem -Path "artifacts/publish/app" -Recurse -File |
-            Where-Object { $_.Extension -in ".exe", ".dll" }
-
-          if ($null -eq $targets -or $targets.Count -eq 0) {
-            throw "No signable binaries found in artifacts/publish/app."
-          }
-
-          foreach ($target in $targets) {
-            & $signtoolPath sign `
-              /fd SHA256 `
-              /td SHA256 `
-              /tr $env:CI_SIGNING_TIMESTAMP_URL `
-              /f $env:CI_SIGNING_PFX_PATH `
-              /p $env:CODESIGN_PFX_PASSWORD `
-              /d $env:CI_SIGNING_FILE_DESCRIPTION `
-              /du $env:CI_SIGNING_FILE_URL `
-              $target.FullName
-
-            if ($LASTEXITCODE -ne 0) {
-              throw "Signing failed: $($target.FullName)"
-            }
-
-            & $signtoolPath verify /pa /v $target.FullName *> $null
-            if ($LASTEXITCODE -ne 0) {
-              throw "Signature verification failed: $($target.FullName)"
-            }
-          }
-
-          Write-Host "Signed and verified $($targets.Count) binaries."
-
-      - name: Rebuild Update Feed From Signed Binaries (optional)
-        if: env.CI_SIGNING_ENABLED == 'true'
+      - name: Install Inno Setup
         shell: pwsh
         run: |
-          ./deployment/Create-UpdateFeed.ps1 `
-            -PublishDir "artifacts/publish/app" `
-            -FeedDir "artifacts/update-feed" `
-            -Version "${env:APP_VERSION}" `
-            -ExeName "ZomboidGuide.exe"
+          choco install innosetup --yes --no-progress
 
-      - name: Pack Release Artifacts
+      - name: Build Installer Artifacts
         shell: pwsh
         run: |
           $releaseDir = "artifacts/release"
           New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
 
-          $appZip  = Join-Path $releaseDir ("ZomboidGuide-{0}-win-x64.zip" -f $env:APP_VERSION)
-          $feedZip = Join-Path $releaseDir ("ZomboidGuide-{0}-update-feed.zip" -f $env:APP_VERSION)
+          $iscc = Get-Command iscc -ErrorAction SilentlyContinue
+          if ($null -eq $iscc) {
+            $fallbackIscc = Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"
+            if (-not (Test-Path $fallbackIscc)) {
+              throw "Inno Setup compiler (iscc) was not found."
+            }
+            $isccPath = $fallbackIscc
+          }
+          else {
+            $isccPath = $iscc.Path
+          }
 
-          if (Test-Path $appZip)  { Remove-Item $appZip -Force }
-          if (Test-Path $feedZip) { Remove-Item $feedZip -Force }
+          $sourceDir = (Resolve-Path "artifacts/publish/app").Path
+          $outputDir = (Resolve-Path $releaseDir).Path
 
-          Compress-Archive -Path "artifacts/publish/app/*" -DestinationPath $appZip -CompressionLevel Optimal
-          Compress-Archive -Path "artifacts/update-feed/*" -DestinationPath $feedZip -CompressionLevel Optimal
+          & $isccPath `
+            "/DMyAppVersion=$env:APP_VERSION" `
+            "/DSourceDir=$sourceDir" `
+            "/DOutputDir=$outputDir" `
+            "deployment/Installer.iss"
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Installer build failed."
+          }
+
+          $installerFiles = Get-ChildItem -Path $releaseDir -Filter "*.exe" -File
+          if ($null -eq $installerFiles -or $installerFiles.Count -eq 0) {
+            throw "No installer executable was created."
+          }
 
           $hashLines = @()
-          $hashLines += ("{0}  {1}" -f (Get-FileHash $appZip -Algorithm SHA256).Hash.ToLowerInvariant(), [System.IO.Path]::GetFileName($appZip))
-          $hashLines += ("{0}  {1}" -f (Get-FileHash $feedZip -Algorithm SHA256).Hash.ToLowerInvariant(), [System.IO.Path]::GetFileName($feedZip))
+          foreach ($installer in $installerFiles) {
+            $hashLines += ("{0}  {1}" -f (Get-FileHash $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $installer.Name)
+          }
+
           $hashLines | Set-Content -Path (Join-Path $releaseDir "SHA256SUMS.txt") -Encoding utf8
 
-      - name: Build Release Notes (commits since last tag)
-        shell: pwsh
-        run: |
-          git fetch --tags --force
-
-          $tag  = $env:APP_TAG
-          $prev = (git tag --list "v*" --sort=-v:refname | Where-Object { $_ -ne $tag } | Select-Object -First 1)
-
-          if ([string]::IsNullOrWhiteSpace($prev)) {
-            $log = git log --pretty=format:"- %s (%h)" -n 50
-            $rangeText = "(first tag - last 50 commits)"
-          } else {
-            $log = git log --pretty=format:"- %s (%h)" "$prev..$tag"
-            $rangeText = "$prev..$tag"
-          }
-
-          if ([string]::IsNullOrWhiteSpace($log)) { $log = "- (keine Commits gefunden)" }
-
-          $notes = "## Changes ($rangeText)`n$log`n"
-          Set-Content -Path "release-notes.md" -Value $notes -Encoding utf8
-          Write-Host "Release notes generated."
-
-      - name: Create GitHub Release (in Releases repo)
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          repository: ${{ env.RELEASE_TARGET_REPOSITORY }}
-          token: ${{ secrets.ZOMBOIDGUIDERELEASES }}
+          token: ${{ github.token }}
           tag_name: ${{ env.APP_TAG }}
           name: ZomboidGuide ${{ env.APP_VERSION }}
-          target_commitish: ${{ env.RELEASE_TARGET_COMMITISH }}
-          generate_release_notes: false
-          body_path: release-notes.md
+          generate_release_notes: true
           files: |
-            artifacts/release/*.zip
+            artifacts/release/*.exe
             artifacts/release/SHA256SUMS.txt
-
-      - name: Cleanup CI Signing Certificate
-        if: always()
-        shell: pwsh
-        run: |
-          if (-not [string]::IsNullOrWhiteSpace($env:CI_SIGNING_PFX_PATH) -and (Test-Path $env:CI_SIGNING_PFX_PATH)) {
-            Remove-Item -Path $env:CI_SIGNING_PFX_PATH -Force
-            Write-Host "Removed temporary PFX file."
-          }
