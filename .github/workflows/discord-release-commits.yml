@@ -1,4 +1,4 @@
-name: Build and Publish Binary Release
+name: Publish Binary Release on Discord
 
 on:
   push:
