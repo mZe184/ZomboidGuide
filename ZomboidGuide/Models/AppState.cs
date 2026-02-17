@@ -35,7 +35,7 @@ public sealed class AppState
 
     public List<string> SeenInInventoryItemIds { get; set; } = [];
 
-    public List<string> CurrentInventoryItemIds { get; set; } = [];
+    public List<string> CurrentInventoryItemIds { get; set; } = []; 
 
     public List<string> KnownCatalogItemIds { get; set; } = [];
 
