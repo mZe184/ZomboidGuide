@@ -1,6 +1,6 @@
 FREEWARE LICENSE (PROPRIETARY)
 
-Copyright (c) 2026 <Your Name / Company>
+Copyright (c) 2026 twitch.tv/MietzeMatze
 All rights reserved.
 
 
