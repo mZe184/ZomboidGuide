@@ -6,7 +6,7 @@ on:
       - "v*"
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: release-${{ github.ref }}
@@ -37,42 +37,6 @@ jobs:
           "APP_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "APP_TAG=$raw" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           Write-Host "Release version: $version (tag: $raw)"
-
-      - name: Validate Release Target
-        shell: pwsh
-        env:
-          RELEASE_TARGET_REPOSITORY: ${{ vars.RELEASE_TARGET_REPOSITORY }}
-          RELEASE_REPO_TOKEN: ${{ secrets.ZOMBOIDGUIDERELEASES }}
-        run: |
-          if ([string]::IsNullOrWhiteSpace($env:RELEASE_TARGET_REPOSITORY)) {
-            throw "Missing repository variable RELEASE_TARGET_REPOSITORY (format: owner/repo)."
-          }
-
-          if ([string]::IsNullOrWhiteSpace($env:RELEASE_REPO_TOKEN)) {
-            throw "Missing secret ZOMBOIDGUIDERELEASES (token with Contents: write on target repo)."
-          }
-
-          $headers = @{
-            Authorization = "Bearer $($env:RELEASE_REPO_TOKEN)"
-            Accept        = "application/vnd.github+json"
-            "User-Agent"  = "zomboidguide-release-workflow"
-          }
-
-          $repoApi = "https://api.github.com/repos/$($env:RELEASE_TARGET_REPOSITORY)"
-          $repoInfo = Invoke-RestMethod -Uri $repoApi -Headers $headers -Method Get
-          if ($null -eq $repoInfo -or [string]::IsNullOrWhiteSpace($repoInfo.full_name)) {
-            throw "Could not access target repository metadata."
-          }
-
-          $branchesApi = "https://api.github.com/repos/$($env:RELEASE_TARGET_REPOSITORY)/branches?per_page=1"
-          $branches = Invoke-RestMethod -Uri $branchesApi -Headers $headers -Method Get
-          if ($null -eq $branches -or $branches.Count -lt 1) {
-            throw "Target repository has no commits/branches yet. Create an initial commit first."
-          }
-
-          "RELEASE_TARGET_REPOSITORY=$($env:RELEASE_TARGET_REPOSITORY)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          Write-Host "Target repository: $($env:RELEASE_TARGET_REPOSITORY)"
-          Write-Host "Target repository check passed."
 
       - name: Restore
         run: dotnet restore ZomboidGuide.sln
@@ -136,8 +100,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          repository: ${{ env.RELEASE_TARGET_REPOSITORY }}
-          token: ${{ secrets.ZOMBOIDGUIDERELEASES }}
+          token: ${{ github.token }}
           tag_name: ${{ env.APP_TAG }}
           name: ZomboidGuide ${{ env.APP_VERSION }}
           generate_release_notes: true
