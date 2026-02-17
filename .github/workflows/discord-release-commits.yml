@@ -44,7 +44,7 @@ jobs:
           fi
 
           if [ -z "${TAG:-}" ] || [ -z "${URL:-}" ]; then
-            LATEST_RELEASE="$(curl -fsS \
+            LATEST_RELEASE="$(curl -fsS \  
               -H "Authorization: Bearer ${TOKEN}" \
               -H "Accept: application/vnd.github+json" \
               "https://api.github.com/repos/${REPO}/releases/latest")"
