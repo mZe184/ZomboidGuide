@@ -10,6 +10,7 @@ using System.Reflection;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Media;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -22,6 +23,10 @@ public partial class MainWindowViewModel : ViewModelBase
 {
     private const int CurrentInventoryDetectionVersion = 5;
     private const string DefaultGitHubUpdateRepository = "https://github.com/mZe184/ZomboidGuide";
+    private static readonly IBrush RiskUnknownBrush = Brush.Parse("#4C5840");
+    private static readonly IBrush RiskSafeBrush = Brush.Parse("#2F5A3E");
+    private static readonly IBrush RiskRiskyBrush = Brush.Parse("#7A5A2E");
+    private static readonly IBrush RiskCriticalBrush = Brush.Parse("#7A2E2E");
 
     private readonly AppStateService _appStateService = new();
     private readonly GuideCatalogService _guideCatalogService = new();
@@ -55,6 +60,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private FileSystemWatcher? _sessionWatcher;
     private bool _sessionWatcherDirty;
     private string _watchedSavePath = string.Empty;
+    private DateTime _lastObservedPlayersDbWriteUtc = DateTime.MinValue;
 
     [ObservableProperty]
     private ObservableCollection<BookCategoryGroupViewModel> filteredBookGroups = [];
@@ -109,6 +115,18 @@ public partial class MainWindowViewModel : ViewModelBase
 
     [ObservableProperty]
     private bool autoUpdateCheck = true;
+
+    [ObservableProperty]
+    private bool riskIndicatorEnabled;
+
+    [ObservableProperty]
+    private SessionRiskLevel riskLevel = SessionRiskLevel.Unknown;
+
+    [ObservableProperty]
+    private int riskScore;
+
+    [ObservableProperty]
+    private string riskNotes = string.Empty;
 
     [ObservableProperty]
     private string statusMessage = string.Empty;
@@ -202,6 +220,50 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public string AutoUpdateOnText => L("Auto Update Check On", "Auto-Updatecheck an");
 
+    public string RiskIndicatorOffText => L("Risk Indicator Off", "Risiko-Indikator aus");
+
+    public string RiskIndicatorOnText => L("Risk Indicator On", "Risiko-Indikator an");
+
+    public string RiskIndicatorTitleText => L("Survival Risk", "Überlebensrisiko");
+
+    public bool IsRiskIndicatorVisible => RiskIndicatorEnabled;
+
+    public string RiskLevelText => RiskLevel switch
+    {
+        SessionRiskLevel.Safe => L("Safe", "Sicher"),
+        SessionRiskLevel.Risky => L("Risky", "Riskant"),
+        SessionRiskLevel.Critical => L("Critical", "Kritisch"),
+        _ => L("Unknown", "Unbekannt"),
+    };
+
+    public string RiskScoreText => Lf("Risk score: {0}/100", "Risiko-Score: {0}/100", RiskScore);
+
+    public string RiskHintText
+    {
+        get
+        {
+            var guidance = RiskLevel switch
+            {
+                SessionRiskLevel.Safe => L("Stable for now. Keep food, water, and rest up.", "Aktuell stabil. Nahrung, Wasser und Ruhe beibehalten."),
+                SessionRiskLevel.Risky => L("Warning: eat, drink, and rest soon.", "Warnung: bald essen, trinken und ausruhen."),
+                SessionRiskLevel.Critical => L("Critical: sleep, eat, and treat wounds now.", "Kritisch: jetzt schlafen, essen und Wunden behandeln."),
+                _ => L("No fresh session risk data yet.", "Noch keine frischen Session-Risikodaten."),
+            };
+
+            return string.IsNullOrWhiteSpace(RiskNotes)
+                ? guidance
+                : $"{guidance}{Environment.NewLine}{RiskNotes}";
+        }
+    }
+
+    public IBrush RiskBadgeBrush => RiskLevel switch
+    {
+        SessionRiskLevel.Safe => RiskSafeBrush,
+        SessionRiskLevel.Risky => RiskRiskyBrush,
+        SessionRiskLevel.Critical => RiskCriticalBrush,
+        _ => RiskUnknownBrush,
+    };
+
     public string CheckUpdatesButtonText => L("Check For Update", "Nach Update suchen");
 
     public string InstallUpdateButtonText => L("Install Update", "Update installieren");
@@ -259,6 +321,7 @@ public partial class MainWindowViewModel : ViewModelBase
     public MainWindowViewModel()
     {
         ApplyInitialUiTextDefaults();
+        UpdateSessionPollingInterval();
         _sessionTimer.Tick += SessionTimerOnTick;
         _sessionWatcherDebounceTimer.Tick += SessionWatcherDebounceOnTick;
         _sessionTimer.Start();
@@ -272,6 +335,9 @@ public partial class MainWindowViewModel : ViewModelBase
         DataSource = L("Not loaded yet", "Noch nicht geladen");
         LastSyncText = L("No catalog sync yet", "Noch keine Katalog-Synchronisierung");
         LastSessionSyncText = L("No session sync yet", "Noch keine Session-Synchronisierung");
+        RiskLevel = SessionRiskLevel.Unknown;
+        RiskScore = 0;
+        RiskNotes = string.Empty;
     }
 
     partial void OnSearchTextChanged(string value)
@@ -365,6 +431,48 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         _state.AutoUpdateCheck = value;
         _ = SaveStateAsync();
+    }
+
+    partial void OnRiskIndicatorEnabledChanged(bool value)
+    {
+        _state.RiskIndicatorEnabled = value;
+        UpdateSessionPollingInterval();
+        OnPropertyChanged(nameof(IsRiskIndicatorVisible));
+
+        if (_isInitializing)
+        {
+            return;
+        }
+
+        if (!value)
+        {
+            ResetRiskIndicator();
+        }
+
+        _ = SaveStateAsync();
+
+        if (value)
+        {
+            ConfigureSessionWatcher();
+            _ = SyncSessionAsync(isManual: false);
+        }
+    }
+
+    partial void OnRiskLevelChanged(SessionRiskLevel value)
+    {
+        OnPropertyChanged(nameof(RiskLevelText));
+        OnPropertyChanged(nameof(RiskHintText));
+        OnPropertyChanged(nameof(RiskBadgeBrush));
+    }
+
+    partial void OnRiskScoreChanged(int value)
+    {
+        OnPropertyChanged(nameof(RiskScoreText));
+    }
+
+    partial void OnRiskNotesChanged(string value)
+    {
+        OnPropertyChanged(nameof(RiskHintText));
     }
 
     partial void OnBookProgressChanged(string value)
@@ -632,6 +740,7 @@ public partial class MainWindowViewModel : ViewModelBase
             IncludeMods = _state.IncludeMods;
             AutoSessionSync = _state.AutoSessionSync;
             AutoUpdateCheck = _state.AutoUpdateCheck;
+            RiskIndicatorEnabled = _state.RiskIndicatorEnabled;
             GamePath = _state.GamePath ?? string.Empty;
             _state.LanguageCode = ResolvePreferredLanguageCode(
                 _state.LanguageCode,
@@ -751,9 +860,16 @@ public partial class MainWindowViewModel : ViewModelBase
                 StatusMessage = L("Reading active session ...", "Lese aktive Session ...");
             }
 
-            var result = await Task.Run(() => _sessionSyncService.SyncFromCurrentSession(_catalogItems));
+            var result = await Task.Run(() => _sessionSyncService.SyncFromCurrentSession(_catalogItems, includeRiskAssessment: RiskIndicatorEnabled));
             if (!result.Success)
             {
+                if (RiskIndicatorEnabled)
+                {
+                    RiskLevel = SessionRiskLevel.Unknown;
+                    RiskScore = 0;
+                    RiskNotes = L("No fresh risk data available.", "Keine frischen Risikodaten verfügbar.");
+                }
+
                 if (isManual)
                 {
                     StatusMessage = Lf(
@@ -775,6 +891,7 @@ public partial class MainWindowViewModel : ViewModelBase
                 result.SkillLevels);
             ApplySessionSkills(result.SkillLevels);
             RefreshTodoAutoStates();
+            _lastObservedPlayersDbWriteUtc = ResolvePlayersDbLastWriteUtc(result.SavePath);
 
             _state.LastSessionSyncAt = DateTimeOffset.Now;
             LastSessionSyncText = Lf(
@@ -782,6 +899,15 @@ public partial class MainWindowViewModel : ViewModelBase
                 "Letzte Session-Sync: {0:dd.MM.yyyy HH:mm}",
                 _state.LastSessionSyncAt);
             await SaveStateAsync();
+
+            if (RiskIndicatorEnabled)
+            {
+                ApplyRiskIndicator(result);
+            }
+            else
+            {
+                ResetRiskIndicator();
+            }
 
             StatusMessage = L(
                 $"Session synced successfully ({result.PlayerName})",
@@ -1862,9 +1988,101 @@ public partial class MainWindowViewModel : ViewModelBase
         return best;
     }
 
+    private bool ShouldRunAutomaticSessionSync()
+    {
+        return AutoSessionSync || RiskIndicatorEnabled;
+    }
+
+    private void UpdateSessionPollingInterval()
+    {
+        _sessionTimer.Interval = RiskIndicatorEnabled
+            ? TimeSpan.FromSeconds(1)
+            : TimeSpan.FromMinutes(2);
+    }
+
+    private static DateTime ResolvePlayersDbLastWriteUtc(string? savePath)
+    {
+        if (string.IsNullOrWhiteSpace(savePath))
+        {
+            return DateTime.MinValue;
+        }
+
+        var playersDbPath = Path.Combine(savePath, "players.db");
+        return File.Exists(playersDbPath)
+            ? File.GetLastWriteTimeUtc(playersDbPath)
+            : DateTime.MinValue;
+    }
+
+    private bool HasPlayersDbChangedSinceLastSync()
+    {
+        var savePath = _sessionSyncService.TryResolveActiveSavePathForCurrentSession();
+        var writeUtc = ResolvePlayersDbLastWriteUtc(savePath);
+        if (writeUtc == DateTime.MinValue)
+        {
+            return false;
+        }
+
+        return writeUtc > _lastObservedPlayersDbWriteUtc;
+    }
+
+    private void ApplyRiskIndicator(SessionSyncResult result)
+    {
+        RiskLevel = result.RiskLevel;
+        RiskScore = result.RiskScore;
+        RiskNotes = BuildLocalizedRiskNotes(result);
+    }
+
+    private void ResetRiskIndicator()
+    {
+        RiskLevel = SessionRiskLevel.Unknown;
+        RiskScore = 0;
+        RiskNotes = string.Empty;
+    }
+
+    private string BuildLocalizedRiskNotes(SessionSyncResult result)
+    {
+        var notes = new List<string>();
+        if (result.InjuryRiskScore >= 20)
+        {
+            notes.Add(L("Injuries", "Verletzungen"));
+        }
+
+        if (result.MoodleRiskScore >= 18)
+        {
+            notes.Add(L("Bad moodles", "Schlechte Moodles"));
+        }
+
+        if (result.ExhaustionRiskScore >= 15)
+        {
+            notes.Add(L("Exhaustion", "Erschöpfung"));
+        }
+
+        if (result.FoodRiskScore >= 20)
+        {
+            notes.Add(L("Low food or water", "Wenig Essen oder Wasser"));
+        }
+
+        if (result.WeightRiskScore >= 10)
+        {
+            notes.Add(L("Weight warning", "Gewichts-Warnung"));
+        }
+
+        if (notes.Count == 0)
+        {
+            notes.Add(L("No major warnings", "Keine größeren Warnungen"));
+        }
+
+        return Lf("Signals: {0}", "Signale: {0}", string.Join(", ", notes));
+    }
+
     private async void SessionTimerOnTick(object? sender, EventArgs eventArgs)
     {
-        if (!AutoSessionSync || IsBusy)
+        if (!ShouldRunAutomaticSessionSync() || IsBusy)
+        {
+            return;
+        }
+
+        if (RiskIndicatorEnabled && !HasPlayersDbChangedSinceLastSync())
         {
             return;
         }
@@ -1876,7 +2094,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private async void SessionWatcherDebounceOnTick(object? sender, EventArgs eventArgs)
     {
         _sessionWatcherDebounceTimer.Stop();
-        if (!_sessionWatcherDirty || !AutoSessionSync || IsBusy)
+        if (!_sessionWatcherDirty || !ShouldRunAutomaticSessionSync() || IsBusy)
         {
             _sessionWatcherDirty = false;
             return;
@@ -1970,7 +2188,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private async Task ReloadAndResyncForLanguageChangeAsync()
     {
         await ReloadDataAsync(preferGameFiles: !string.IsNullOrWhiteSpace(GamePath));
-        if (AutoSessionSync)
+        if (ShouldRunAutomaticSessionSync())
         {
             await SyncSessionAsync(isManual: false);
         }
@@ -2253,6 +2471,13 @@ public partial class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(ClearChecksButtonText));
         OnPropertyChanged(nameof(AutoUpdateOffText));
         OnPropertyChanged(nameof(AutoUpdateOnText));
+        OnPropertyChanged(nameof(RiskIndicatorOffText));
+        OnPropertyChanged(nameof(RiskIndicatorOnText));
+        OnPropertyChanged(nameof(RiskIndicatorTitleText));
+        OnPropertyChanged(nameof(RiskLevelText));
+        OnPropertyChanged(nameof(RiskScoreText));
+        OnPropertyChanged(nameof(RiskHintText));
+        OnPropertyChanged(nameof(RiskBadgeBrush));
         OnPropertyChanged(nameof(CheckUpdatesButtonText));
         OnPropertyChanged(nameof(InstallUpdateButtonText));
         OnPropertyChanged(nameof(DismissUpdatePromptButtonText));

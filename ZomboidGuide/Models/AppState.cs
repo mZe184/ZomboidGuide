@@ -15,6 +15,8 @@ public sealed class AppState
 
     public bool AutoUpdateCheck { get; set; } = true;
 
+    public bool RiskIndicatorEnabled { get; set; }
+
     public string BookStatusFilterKey { get; set; } = "all";
 
     public string MagazineStatusFilterKey { get; set; } = "all";

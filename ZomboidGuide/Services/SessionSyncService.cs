@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -17,9 +18,44 @@ public sealed class SessionSyncService
     private static readonly Regex WorldDictionaryRegistryRegex = new(@"registryID\s*=\s*(\d+)", RegexOptions.Compiled);
     private static readonly Regex WorldDictionaryFullTypeRegex = new(@"fulltype\s*=\s*""([^""]+)""", RegexOptions.Compiled);
     private static readonly Regex PrintablePhraseRegex = new(@"[A-Za-z][A-Za-z0-9 '\-:]{4,}", RegexOptions.Compiled);
+    private static readonly Regex WeightValueRegex = new(@"weight\s*[:=]?\s*(\d{2,3}(?:[.,]\d)?)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex InventoryItemTokenRegex = new(@"^[A-Za-z0-9_]+\.[A-Za-z0-9_]+$", RegexOptions.Compiled);
     private static readonly Regex InventoryBookTokenRegex = new(@"(?:^|[.:])Book[A-Za-z]+[0-9]+$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex LevelRegex = new(@"(\d+)", RegexOptions.Compiled);
+    private static readonly string[] SevereInjuryKeywords =
+    [
+        "deepwound", "fracture", "brokenbone", "infected", "severebleeding", "bleeding", "gunshot", "burned",
+    ];
+
+    private static readonly string[] InjuryWarningKeywords =
+    [
+        "injury", "wound", "laceration", "scratch", "burn", "pain", "fever", "sickness",
+    ];
+
+    private static readonly string[] ExhaustionKeywords =
+    [
+        "exhausted", "verytired", "tired", "drowsy", "sleepy", "fatigue", "exertion", "heavyload", "encumbered",
+    ];
+
+    private static readonly string[] CriticalMoodleKeywords =
+    [
+        "starving", "dehydrated", "terrified", "panic", "terminaldamage", "dying",
+    ];
+
+    private static readonly string[] WarningMoodleKeywords =
+    [
+        "hungry", "thirsty", "stressed", "unhappy", "queasy", "nervous", "agitated", "depressed",
+    ];
+
+    private static readonly string[] FoodInventoryKeywords =
+    [
+        "canned", "beans", "soup", "stew", "rice", "pasta", "tuna", "fish", "meat", "fruit", "vegetable", "snack", "chips", "bread",
+    ];
+
+    private static readonly string[] WaterInventoryKeywords =
+    [
+        "water", "bottlewater", "waterbottle", "canteen", "juice", "soda",
+    ];
     private static readonly string[] ContainerTypeHints =
     [
         "bag",
@@ -97,7 +133,7 @@ public sealed class SessionSyncService
         return $"resolvedSave={savePath}; {diagnostics}";
     }
 
-    public SessionSyncResult SyncFromCurrentSession(IReadOnlyCollection<GuideItem> catalogItems)
+    public SessionSyncResult SyncFromCurrentSession(IReadOnlyCollection<GuideItem> catalogItems, bool includeRiskAssessment = false)
     {
         if (catalogItems.Count == 0)
         {
@@ -170,6 +206,9 @@ public sealed class SessionSyncService
             }
 
             var professionId = MatchProfession(catalogItems, tokenSet, normalizedTokenSet);
+            var riskAssessment = includeRiskAssessment
+                ? EvaluateRisk(playerRow, normalizedTokenSet, normalizedPhraseSet, inventoryItemTokens)
+                : SessionRiskAssessment.None;
 
             return new SessionSyncResult
             {
@@ -184,6 +223,14 @@ public sealed class SessionSyncService
                 ReadMagazineItemIds = readMagazines.ToArray(),
                 LearnedRecipeItemIds = learnedRecipes.ToArray(),
                 SkillLevels = skills.ToArray(),
+                RiskLevel = riskAssessment.Level,
+                RiskScore = riskAssessment.Score,
+                InjuryRiskScore = riskAssessment.InjuryScore,
+                ExhaustionRiskScore = riskAssessment.ExhaustionScore,
+                FoodRiskScore = riskAssessment.FoodScore,
+                MoodleRiskScore = riskAssessment.MoodleScore,
+                WeightRiskScore = riskAssessment.WeightScore,
+                RiskNotes = riskAssessment.Note,
                 Message =
                     $"Session geladen: Bücher inv/gelesen/obsolete {matchedBooks.Count}/{readBooks.Count}/{obsoleteBooks.Count}, " +
                     $"Magazine inv/gelesen {matchedMagazines.Count}/{readMagazines.Count}, Rezepte gelernt {learnedRecipes.Count}",
@@ -1584,6 +1631,189 @@ public sealed class SessionSyncService
         return tokens;
     }
 
+    private static SessionRiskAssessment EvaluateRisk(
+        PlayerRow playerRow,
+        IReadOnlyCollection<string> normalizedTokenSet,
+        IReadOnlyCollection<string> normalizedPhraseSet,
+        IReadOnlyCollection<string> inventoryItemTokens)
+    {
+        if (playerRow.IsDead)
+        {
+            return new SessionRiskAssessment(
+                SessionRiskLevel.Critical,
+                100,
+                InjuryScore: 40,
+                ExhaustionScore: 15,
+                FoodScore: 20,
+                MoodleScore: 20,
+                WeightScore: 5,
+                Note: "Character state is dead.");
+        }
+
+        var searchTokens = new HashSet<string>(normalizedTokenSet, StringComparer.OrdinalIgnoreCase);
+        foreach (var phrase in normalizedPhraseSet)
+        {
+            var normalized = Normalize(phrase);
+            if (normalized.Length > 0)
+            {
+                searchTokens.Add(normalized);
+            }
+        }
+
+        var normalizedInventory = inventoryItemTokens
+            .Select(Normalize)
+            .Where(value => value.Length > 0)
+            .ToArray();
+
+        var severeInjuryMatches = CountKeywordMatches(searchTokens, SevereInjuryKeywords);
+        var warningInjuryMatches = CountKeywordMatches(searchTokens, InjuryWarningKeywords);
+        var injuryScore = Math.Min(45, severeInjuryMatches * 18 + warningInjuryMatches * 8);
+
+        var exhaustionMatches = CountKeywordMatches(searchTokens, ExhaustionKeywords);
+        var exhaustionScore = Math.Min(30, exhaustionMatches * 9);
+
+        var criticalMoodleMatches = CountKeywordMatches(searchTokens, CriticalMoodleKeywords);
+        var warningMoodleMatches = CountKeywordMatches(searchTokens, WarningMoodleKeywords);
+        var moodleScore = Math.Min(35, criticalMoodleMatches * 12 + warningMoodleMatches * 6);
+
+        var foodCount = CountInventoryMatches(normalizedInventory, FoodInventoryKeywords);
+        var waterCount = CountInventoryMatches(normalizedInventory, WaterInventoryKeywords);
+        var foodScore = foodCount switch
+        {
+            <= 0 => 30,
+            <= 2 => 18,
+            <= 5 => 8,
+            _ => 0,
+        };
+
+        if (waterCount == 0)
+        {
+            foodScore += 20;
+        }
+        else if (waterCount == 1)
+        {
+            foodScore += 8;
+        }
+
+        foodScore = Math.Min(40, foodScore);
+
+        var weightScore = 0;
+        var weight = TryExtractWeight(playerRow.Data);
+        if (weight.HasValue)
+        {
+            if (weight.Value is < 55 or > 120)
+            {
+                weightScore = 20;
+            }
+            else if (weight.Value is < 65 or > 105)
+            {
+                weightScore = 10;
+            }
+        }
+
+        var totalScore = Math.Min(100, injuryScore + exhaustionScore + moodleScore + foodScore + weightScore);
+        var riskLevel = totalScore switch
+        {
+            >= 70 => SessionRiskLevel.Critical,
+            >= 35 => SessionRiskLevel.Risky,
+            _ => SessionRiskLevel.Safe,
+        };
+
+        var notes = new List<string>();
+        if (injuryScore >= 20)
+        {
+            notes.Add("Injuries detected");
+        }
+
+        if (exhaustionScore >= 15)
+        {
+            notes.Add("Strong exhaustion markers");
+        }
+
+        if (moodleScore >= 18)
+        {
+            notes.Add("Negative moodles active");
+        }
+
+        if (foodScore >= 20)
+        {
+            notes.Add("Low food/water reserves");
+        }
+
+        if (weightScore >= 10)
+        {
+            notes.Add("Weight outside healthy range");
+        }
+
+        if (notes.Count == 0)
+        {
+            notes.Add("No high-risk markers");
+        }
+
+        return new SessionRiskAssessment(
+            riskLevel,
+            totalScore,
+            injuryScore,
+            exhaustionScore,
+            foodScore,
+            moodleScore,
+            weightScore,
+            string.Join("; ", notes));
+    }
+
+    private static int CountKeywordMatches(IReadOnlyCollection<string> searchTokens, IReadOnlyCollection<string> keywords)
+    {
+        if (searchTokens.Count == 0 || keywords.Count == 0)
+        {
+            return 0;
+        }
+
+        var count = 0;
+        foreach (var keyword in keywords)
+        {
+            if (searchTokens.Any(token => token.Contains(keyword, StringComparison.OrdinalIgnoreCase)))
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    private static int CountInventoryMatches(IReadOnlyCollection<string> inventoryTokens, IReadOnlyCollection<string> keywords)
+    {
+        if (inventoryTokens.Count == 0 || keywords.Count == 0)
+        {
+            return 0;
+        }
+
+        return inventoryTokens.Count(token =>
+            keywords.Any(keyword => token.Contains(keyword, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private static double? TryExtractWeight(byte[] data)
+    {
+        if (data.Length == 0)
+        {
+            return null;
+        }
+
+        var text = Encoding.UTF8.GetString(data).Replace('\0', ' ');
+        var match = WeightValueRegex.Match(text);
+        if (!match.Success)
+        {
+            return null;
+        }
+
+        var rawWeight = match.Groups[1].Value.Replace(',', '.');
+        if (!double.TryParse(rawWeight, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var weight))
+        {
+            return null;
+        }
+
+        return weight is < 30 or > 250 ? null : weight;
+    }
+
     private static int ReadUInt16BigEndian(byte[] data, int position)
     {
         return (data[position] << 8) | data[position + 1];
@@ -1656,5 +1886,26 @@ public sealed class SessionSyncService
         public bool IsDead { get; init; }
 
         public int WorldVersion { get; init; }
+    }
+
+    private sealed record SessionRiskAssessment(
+        SessionRiskLevel Level,
+        int Score,
+        int InjuryScore,
+        int ExhaustionScore,
+        int FoodScore,
+        int MoodleScore,
+        int WeightScore,
+        string Note)
+    {
+        public static SessionRiskAssessment None { get; } = new(
+            SessionRiskLevel.Unknown,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            string.Empty);
     }
 }

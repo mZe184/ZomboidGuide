@@ -28,4 +28,20 @@ public sealed class SessionSyncResult
     public IReadOnlyCollection<string> LearnedRecipeItemIds { get; init; } = Array.Empty<string>();
 
     public IReadOnlyCollection<SessionSkillLevel> SkillLevels { get; init; } = Array.Empty<SessionSkillLevel>();
+
+    public SessionRiskLevel RiskLevel { get; init; } = SessionRiskLevel.Unknown;
+
+    public int RiskScore { get; init; }
+
+    public int InjuryRiskScore { get; init; }
+
+    public int ExhaustionRiskScore { get; init; }
+
+    public int FoodRiskScore { get; init; }
+
+    public int MoodleRiskScore { get; init; }
+
+    public int WeightRiskScore { get; init; }
+
+    public string RiskNotes { get; init; } = string.Empty;
 }
