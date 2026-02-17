@@ -62,6 +62,53 @@ public sealed class ZomboidDataParser
 
     public string? TryAutoDetectGamePath()
     {
+        var candidates = BuildGamePathCandidates();
+        return candidates.FirstOrDefault(path => Directory.Exists(Path.Combine(path, "media")));
+    }
+
+    public string BuildAutoDetectDiagnostics()
+    {
+        var candidates = BuildGamePathCandidates();
+        if (candidates.Count == 0)
+        {
+            return "No detection candidates generated.";
+        }
+
+        var existing = new List<string>();
+        var missing = new List<string>();
+        foreach (var candidate in candidates)
+        {
+            if (Directory.Exists(Path.Combine(candidate, "media")))
+            {
+                existing.Add(candidate);
+            }
+            else
+            {
+                missing.Add(candidate);
+            }
+        }
+
+        var parts = new List<string>
+        {
+            $"candidates={candidates.Count}",
+            $"found={existing.Count}",
+        };
+
+        if (existing.Count > 0)
+        {
+            parts.Add("foundPaths=" + string.Join(" | ", existing.Take(4)));
+        }
+
+        if (missing.Count > 0)
+        {
+            parts.Add("checkedMissing=" + string.Join(" | ", missing.Take(6)));
+        }
+
+        return string.Join("; ", parts);
+    }
+
+    private static IReadOnlyList<string> BuildGamePathCandidates()
+    {
         var candidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         var programFilesX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
@@ -88,7 +135,7 @@ public sealed class ZomboidDataParser
             AddCandidate(candidates, Path.Combine(drive.RootDirectory.FullName, "Games", "SteamLibrary", "steamapps", "common", "ProjectZomboid"));
         }
 
-        return candidates.FirstOrDefault(path => Directory.Exists(Path.Combine(path, "media")));
+        return candidates.ToList();
     }
 
     private static void AddSteamInstallCandidates(ISet<string> candidates, string? steamRootPath)

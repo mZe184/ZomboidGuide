@@ -16,6 +16,11 @@ public sealed class GuideCatalogService
         return _zomboidDataParser.TryAutoDetectGamePath();
     }
 
+    public string GetAutoDetectGamePathDiagnostics()
+    {
+        return _zomboidDataParser.BuildAutoDetectDiagnostics();
+    }
+
     public IReadOnlyList<string> GetAvailableLanguageCodes(string? gamePath, bool includeMods)
     {
         return _zomboidDataParser.GetAvailableLanguageCodes(gamePath, includeMods);

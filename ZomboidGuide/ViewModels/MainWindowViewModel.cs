@@ -21,7 +21,7 @@ namespace ZomboidGuide.ViewModels;
 public partial class MainWindowViewModel : ViewModelBase
 {
     private const int CurrentInventoryDetectionVersion = 5;
-    private const string DefaultGitHubUpdateRepository = "https://github.com/mZe184/ZomboidGuideReleases";
+    private const string DefaultGitHubUpdateRepository = "https://github.com/mZe184/ZomboidGuide";
 
     private readonly AppStateService _appStateService = new();
     private readonly GuideCatalogService _guideCatalogService = new();
@@ -152,6 +152,12 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private bool isBusy;
 
+    [ObservableProperty]
+    private bool isDiagnosticsVisible;
+
+    [ObservableProperty]
+    private string diagnosticsText = string.Empty;
+
     public string WindowTitleText => L("MietzeMatze's Zomboid Guide", "MietzeMatze's Zomboid Guide");
 
     public string HeaderTitleText => L("MietzeMatze's Zomboid Guide", "MietzeMatze's Zomboid Guide");
@@ -175,6 +181,12 @@ public partial class MainWindowViewModel : ViewModelBase
     public string LoadFallbackButtonText => L("Load Fallback", "Fallback laden");
 
     public string SyncSessionButtonText => L("Load Active Session", "Aktive Session laden");
+
+    public string DiagnosticsButtonText => L("Show Diagnostics", "Diagnose anzeigen");
+
+    public string DiagnosticsDialogTitleText => L("Diagnostics", "Diagnose");
+
+    public string CloseDiagnosticsButtonText => L("Close", "Schließen");
 
     public string SearchWatermarkText => L(
         "Search skills, books, magazines, recipes ...",
@@ -300,7 +312,7 @@ public partial class MainWindowViewModel : ViewModelBase
             return;
         }
 
-        var languageCode = value?.Code ?? "EN";
+        var languageCode = NormalizeLanguageCode(value?.Code);
         _state.LanguageCode = languageCode;
         ApplyUiLanguage();
         _ = SaveStateAsync();
@@ -394,12 +406,66 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     [RelayCommand]
+    private void ShowDiagnostics()
+    {
+        var currentPathState = string.IsNullOrWhiteSpace(GamePath)
+            ? "gamePath=empty"
+            : $"gamePath={GamePath}; exists={Directory.Exists(GamePath)}; mediaExists={Directory.Exists(Path.Combine(GamePath, "media"))}";
+        var autoDetectDiagnostics = _guideCatalogService.GetAutoDetectGamePathDiagnostics();
+        var activeSaveDiagnostics = _sessionSyncService.BuildActiveSaveDiagnostics();
+
+        DiagnosticsText = string.Join(
+            Environment.NewLine + Environment.NewLine,
+            [
+                $"time={DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}",
+                FormatDiagnosticsSection("gamePath", currentPathState),
+                FormatDiagnosticsSection("autoDetect", autoDetectDiagnostics),
+                FormatDiagnosticsSection("activeSave", activeSaveDiagnostics),
+            ]);
+
+        IsDiagnosticsVisible = true;
+        StatusMessage = L("Diagnostics prepared.", "Diagnose erstellt.");
+    }
+
+    [RelayCommand]
+    private void CloseDiagnostics()
+    {
+        IsDiagnosticsVisible = false;
+    }
+
+    private static string FormatDiagnosticsSection(string label, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return $"{label}:{Environment.NewLine}(empty)";
+        }
+
+        var normalized = value
+            .Replace("\r\n", "\n")
+            .Replace(" | ", "\n")
+            .Replace("; ", "\n")
+            .Replace("|", "\n")
+            .Replace(";", "\n");
+
+        var lines = normalized
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        return lines.Length == 0
+            ? $"{label}:{Environment.NewLine}(empty)"
+            : $"{label}:{Environment.NewLine}{string.Join(Environment.NewLine, lines)}";
+    }
+
+    [RelayCommand]
     private async Task AutoDetectPathAsync()
     {
         var detectedPath = _guideCatalogService.TryAutoDetectGamePath();
         if (string.IsNullOrWhiteSpace(detectedPath))
         {
-            StatusMessage = L("Could not auto-detect a Project Zomboid installation.", "Keine Project-Zomboid-Installation automatisch gefunden.");
+            var diagnostics = TruncateStatusDetail(_guideCatalogService.GetAutoDetectGamePathDiagnostics());
+            StatusMessage = Lf(
+                "Could not auto-detect a Project Zomboid installation. Diagnostics: {0}",
+                "Keine Project-Zomboid-Installation automatisch gefunden. Diagnose: {0}",
+                diagnostics);
             return;
         }
 
@@ -567,9 +633,9 @@ public partial class MainWindowViewModel : ViewModelBase
             AutoSessionSync = _state.AutoSessionSync;
             AutoUpdateCheck = _state.AutoUpdateCheck;
             GamePath = _state.GamePath ?? string.Empty;
-            _state.LanguageCode = string.IsNullOrWhiteSpace(_state.LanguageCode)
-                ? "EN"
-                : _state.LanguageCode.ToUpperInvariant();
+            _state.LanguageCode = ResolvePreferredLanguageCode(
+                _state.LanguageCode,
+                _uiLocalizationService.GetSupportedLanguageCodes());
             _state.BookStatusFilterKey = string.IsNullOrWhiteSpace(_state.BookStatusFilterKey)
                 ? "all"
                 : _state.BookStatusFilterKey.ToLowerInvariant();
@@ -690,7 +756,10 @@ public partial class MainWindowViewModel : ViewModelBase
             {
                 if (isManual)
                 {
-                    StatusMessage = Lf("Session sync failed: {0}", "Session-Sync fehlgeschlagen: {0}", result.Message);
+                    StatusMessage = Lf(
+                        "Session sync failed: {0}",
+                        "Session-Sync fehlgeschlagen: {0}",
+                        TruncateStatusDetail(result.Message));
                 }
 
                 return;
@@ -1947,7 +2016,16 @@ public partial class MainWindowViewModel : ViewModelBase
             AvailableLanguages.Add(option);
         }
 
-        var selectedCode = NormalizeLanguageCode(_state.LanguageCode);
+        var selectedCode = ResolvePreferredLanguageCode(
+            _state.LanguageCode,
+            AvailableLanguages.Select(option => option.Code).ToList());
+        if (!selectedCode.Equals(_state.LanguageCode, StringComparison.OrdinalIgnoreCase))
+        {
+            _state.LanguageCode = selectedCode;
+            ApplyUiLanguage();
+            await SaveStateAsync();
+        }
+
         var selectedOption = AvailableLanguages.FirstOrDefault(option =>
             option.Code.Equals(selectedCode, StringComparison.OrdinalIgnoreCase)) ?? AvailableLanguages.First();
 
@@ -1981,6 +2059,87 @@ public partial class MainWindowViewModel : ViewModelBase
             "UK" => "UA",
             _ => normalized,
         };
+    }
+
+    private static string DetectSystemLanguageCode()
+    {
+        var uiLanguage = MapCultureToLanguageCode(CultureInfo.CurrentUICulture);
+        if (!string.IsNullOrWhiteSpace(uiLanguage))
+        {
+            return uiLanguage;
+        }
+
+        var currentLanguage = MapCultureToLanguageCode(CultureInfo.CurrentCulture);
+        return string.IsNullOrWhiteSpace(currentLanguage)
+            ? "EN"
+            : currentLanguage;
+    }
+
+    private static string MapCultureToLanguageCode(CultureInfo? culture)
+    {
+        if (culture is null)
+        {
+            return "EN";
+        }
+
+        var cultureName = (culture.Name ?? string.Empty).Trim().Replace('_', '-');
+        var upperName = cultureName.ToUpperInvariant();
+        var nameParts = upperName.Split('-', StringSplitOptions.RemoveEmptyEntries);
+        var primary = nameParts.Length > 0 ? nameParts[0] : string.Empty;
+        var secondary = nameParts.Length > 1 ? nameParts[1] : string.Empty;
+
+        if (primary.Equals("ZH", StringComparison.Ordinal))
+        {
+            var isTraditionalChinese = secondary is "TW" or "HK" or "MO" || upperName.Contains("HANT", StringComparison.Ordinal);
+            return isTraditionalChinese ? "CH" : "CN";
+        }
+
+        if (primary.Equals("PT", StringComparison.Ordinal) && secondary.Equals("BR", StringComparison.Ordinal))
+        {
+            return "PTBR";
+        }
+
+        return primary switch
+        {
+            "" or "IV" => "EN",
+            "JA" => "JP",
+            "UK" => "UA",
+            "NB" or "NN" => "NO",
+            "TL" or "FIL" => "PH",
+            _ => NormalizeLanguageCode(primary),
+        };
+    }
+
+    private static string ResolvePreferredLanguageCode(string? savedLanguageCode, IReadOnlyCollection<string> availableLanguageCodes)
+    {
+        var available = availableLanguageCodes
+            .Where(code => !string.IsNullOrWhiteSpace(code))
+            .Select(NormalizeLanguageCode)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if (available.Count == 0)
+        {
+            return "EN";
+        }
+
+        if (!string.IsNullOrWhiteSpace(savedLanguageCode))
+        {
+            var normalizedSavedLanguage = NormalizeLanguageCode(savedLanguageCode);
+            if (available.Contains(normalizedSavedLanguage))
+            {
+                return normalizedSavedLanguage;
+            }
+        }
+
+        var systemLanguage = DetectSystemLanguageCode();
+        if (available.Contains(systemLanguage))
+        {
+            return systemLanguage;
+        }
+
+        return available.Contains("EN")
+            ? "EN"
+            : available.First();
     }
 
     private async Task TrySyncSessionOnStartupAsync()
@@ -2087,6 +2246,7 @@ public partial class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(LoadFromGameButtonText));
         OnPropertyChanged(nameof(LoadFallbackButtonText));
         OnPropertyChanged(nameof(SyncSessionButtonText));
+        OnPropertyChanged(nameof(DiagnosticsButtonText));
         OnPropertyChanged(nameof(SearchWatermarkText));
         OnPropertyChanged(nameof(AutoSessionSyncOffText));
         OnPropertyChanged(nameof(AutoSessionSyncOnText));
@@ -2103,6 +2263,8 @@ public partial class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(BookFilterLabelText));
         OnPropertyChanged(nameof(MagazineFilterLabelText));
         OnPropertyChanged(nameof(RecipeFilterLabelText));
+        OnPropertyChanged(nameof(DiagnosticsDialogTitleText));
+        OnPropertyChanged(nameof(CloseDiagnosticsButtonText));
         OnPropertyChanged(nameof(TodoSubtitleText));
         OnPropertyChanged(nameof(TwitchButtonText));
         OnPropertyChanged(nameof(TwitchButtonTextZickchen));
@@ -2208,9 +2370,7 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         try
         {
-            _state.LanguageCode = string.IsNullOrWhiteSpace(_state.LanguageCode)
-                ? "EN"
-                : _state.LanguageCode.ToUpperInvariant();
+            _state.LanguageCode = NormalizeLanguageCode(_state.LanguageCode);
             _state.BookStatusFilterKey = string.IsNullOrWhiteSpace(_state.BookStatusFilterKey)
                 ? "all"
                 : _state.BookStatusFilterKey.ToLowerInvariant();
@@ -2336,6 +2496,22 @@ public partial class MainWindowViewModel : ViewModelBase
 
         var digits = new string(book.Detail.Where(char.IsDigit).ToArray());
         return int.TryParse(digits, out var level) ? level : 0;
+    }
+
+    private static string TruncateStatusDetail(string? value, int maxLength = 700)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var clean = value.Replace(Environment.NewLine, " ", StringComparison.Ordinal).Trim();
+        if (clean.Length <= maxLength)
+        {
+            return clean;
+        }
+
+        return clean[..maxLength] + "...";
     }
 
     private static string NormalizeSkillKey(string value)

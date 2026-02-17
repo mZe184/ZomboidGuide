@@ -9,7 +9,7 @@ public sealed class AppState
 
     public bool IncludeMods { get; set; } = true;
 
-    public string LanguageCode { get; set; } = "EN";
+    public string LanguageCode { get; set; } = string.Empty;
 
     public bool AutoSessionSync { get; set; } = true;
 

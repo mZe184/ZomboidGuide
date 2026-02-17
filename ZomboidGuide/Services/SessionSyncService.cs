@@ -77,7 +77,24 @@ public sealed class SessionSyncService
 
     public string? TryResolveActiveSavePathForCurrentSession()
     {
-        return TryResolveActiveSavePath();
+        var (savePath, _) = TryResolveActiveSavePathWithDiagnostics();
+        return savePath;
+    }
+
+    public string BuildActiveSaveDiagnostics()
+    {
+        var (savePath, diagnostics) = TryResolveActiveSavePathWithDiagnostics();
+        if (string.IsNullOrWhiteSpace(savePath))
+        {
+            return diagnostics;
+        }
+
+        if (string.IsNullOrWhiteSpace(diagnostics))
+        {
+            return $"resolvedSave={savePath}";
+        }
+
+        return $"resolvedSave={savePath}; {diagnostics}";
     }
 
     public SessionSyncResult SyncFromCurrentSession(IReadOnlyCollection<GuideItem> catalogItems)
@@ -91,13 +108,13 @@ public sealed class SessionSyncService
             };
         }
 
-        var savePath = TryResolveActiveSavePath();
+        var (savePath, saveDiagnostics) = TryResolveActiveSavePathWithDiagnostics();
         if (string.IsNullOrWhiteSpace(savePath))
         {
             return new SessionSyncResult
             {
                 Success = false,
-                Message = "Kein aktiver Save gefunden.",
+                Message = $"Kein aktiver Save gefunden. Diagnose: {saveDiagnostics}",
             };
         }
 
@@ -108,7 +125,7 @@ public sealed class SessionSyncService
             {
                 Success = false,
                 SavePath = savePath,
-                Message = "players.db im aktiven Save nicht gefunden.",
+                Message = $"players.db im aktiven Save nicht gefunden. Erwartet: {playersDbPath}. Diagnose: {saveDiagnostics}",
             };
         }
 
@@ -189,20 +206,31 @@ public sealed class SessionSyncService
 
     private static string? TryResolveActiveSavePath()
     {
+        var (savePath, _) = TryResolveActiveSavePathWithDiagnostics();
+        return savePath;
+    }
+
+    private static (string? SavePath, string Diagnostics) TryResolveActiveSavePathWithDiagnostics()
+    {
+        var notes = new List<string>();
         var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         if (string.IsNullOrWhiteSpace(userProfile))
         {
-            return null;
+            return (null, "userProfile=missing");
         }
 
         var zomboidPath = Path.Combine(userProfile, "Zomboid");
         var savesRoot = Path.Combine(zomboidPath, "Saves");
+        notes.Add($"zomboidPath={zomboidPath}");
         if (!Directory.Exists(savesRoot))
         {
-            return null;
+            notes.Add($"savesRootMissing={savesRoot}");
+            return (null, string.Join("; ", notes));
         }
+        notes.Add($"savesRoot={savesRoot}");
 
         var latestSavePath = Path.Combine(zomboidPath, "latestSave.ini");
+        notes.Add($"latestSaveIniExists={File.Exists(latestSavePath)}");
         if (File.Exists(latestSavePath))
         {
             var lines = File.ReadAllLines(latestSavePath, Encoding.UTF8)
@@ -238,17 +266,36 @@ public sealed class SessionSyncService
                 var existing = candidates.FirstOrDefault(Directory.Exists);
                 if (!string.IsNullOrWhiteSpace(existing))
                 {
-                    return existing;
+                    notes.Add($"latestSaveMatched={existing}");
+                    return (existing, string.Join("; ", notes));
                 }
+
+                notes.Add("latestSaveCandidatesChecked=" + string.Join(" | ", candidates.Take(4)));
             }
         }
 
-        var newestSave = Directory.EnumerateFiles(savesRoot, "players.db", SearchOption.AllDirectories)
-            .Select(path => new FileInfo(path))
-            .OrderByDescending(file => file.LastWriteTimeUtc)
-            .FirstOrDefault();
+        FileInfo? newestSave;
+        try
+        {
+            newestSave = Directory.EnumerateFiles(savesRoot, "players.db", SearchOption.AllDirectories)
+                .Select(path => new FileInfo(path))
+                .OrderByDescending(file => file.LastWriteTimeUtc)
+                .FirstOrDefault();
+        }
+        catch (Exception exception)
+        {
+            notes.Add($"playersDbScanError={exception.Message}");
+            return (null, string.Join("; ", notes));
+        }
 
-        return newestSave?.DirectoryName;
+        if (newestSave?.DirectoryName is { Length: > 0 } newestSaveDir)
+        {
+            notes.Add($"fallbackPlayersDb={newestSave.FullName}");
+            return (newestSaveDir, string.Join("; ", notes));
+        }
+
+        notes.Add("playersDbNotFoundInSavesRoot");
+        return (null, string.Join("; ", notes));
     }
 
     private static string CreatePlayersDbSnapshot(string playersDbPath)

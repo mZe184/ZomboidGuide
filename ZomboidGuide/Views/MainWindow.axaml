@@ -161,9 +161,9 @@
     <Grid Margin="16"
           RowDefinitions="Auto,Auto,*,Auto">
         <Border Classes="card">
-            <Grid RowDefinitions="Auto,Auto"
+            <Grid RowDefinitions="Auto,Auto,Auto"
                   ColumnDefinitions="214,*,Auto,300">
-                <Image Grid.RowSpan="2"
+                <Image Grid.RowSpan="3"
                        Grid.Column="0"
                        Width="200"
                        Height="147"
@@ -228,6 +228,19 @@
                         <TextBlock Text="{Binding SyncSessionButtonText}"/>
                     </StackPanel>
                 </Button>
+
+                <Button Grid.Row="2"
+                        Grid.Column="3"
+                        Margin="0,6,0,0"
+                        HorizontalAlignment="Right"
+                        MaxWidth="300"
+                        MinWidth="300"
+                        Command="{Binding ShowDiagnosticsCommand}">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <material:MaterialIcon Kind="Bug" Width="16" Height="16"/>
+                        <TextBlock Text="{Binding DiagnosticsButtonText}"/>
+                    </StackPanel>
+                </Button>
             </Grid>
         </Border>
 
@@ -273,8 +286,6 @@
                         <TextBlock Text="{Binding CheckUpdatesButtonText}"/>
                     </StackPanel>
                 </Button>
-
-                
 
                 <TextBlock Grid.Row="2"
                            Grid.Column="1"
@@ -509,6 +520,38 @@
                            VerticalAlignment="Center"
                            Classes="caption"
                            Text="{Binding LastSessionSyncText}"/>
+            </Grid>
+        </Border>
+
+        <Border Grid.RowSpan="4"
+                IsVisible="{Binding IsDiagnosticsVisible}"
+                Background="#AA000000">
+            <Grid>
+                <Border Classes="card update-dialog-card"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Width="860"
+                        MaxWidth="980">
+                    <StackPanel Spacing="12">
+                        <TextBlock Classes="update-dialog-title"
+                                   Text="{Binding DiagnosticsDialogTitleText}"/>
+
+                        <TextBox MinHeight="360"
+                                 MaxHeight="520"
+                                 IsReadOnly="True"
+                                 AcceptsReturn="True"
+                                 TextWrapping="Wrap"
+                                 Text="{Binding DiagnosticsText}"/>
+
+                        <StackPanel Orientation="Horizontal"
+                                    HorizontalAlignment="Right"
+                                    Spacing="8">
+                            <Button Command="{Binding CloseDiagnosticsCommand}">
+                                <TextBlock Text="{Binding CloseDiagnosticsButtonText}"/>
+                            </Button>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
             </Grid>
         </Border>
 
