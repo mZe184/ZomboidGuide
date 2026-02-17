@@ -85,6 +85,107 @@ jobs:
         run: |
           ./deployment/Build-Release.ps1 -Runtime "win-x64" -Configuration "Release" -Version "${env:APP_VERSION}"
 
+      - name: Prepare CI Code Signing (optional)
+        shell: pwsh
+        env:
+          CODESIGN_PFX_BASE64: ${{ secrets.CODESIGN_PFX_BASE64 }}
+          CODESIGN_PFX_PASSWORD: ${{ secrets.CODESIGN_PFX_PASSWORD }}
+          CI_SIGNING_TIMESTAMP_URL: ${{ vars.CI_SIGNING_TIMESTAMP_URL }}
+          CI_SIGNING_FILE_DESCRIPTION: ${{ vars.CI_SIGNING_FILE_DESCRIPTION }}
+          CI_SIGNING_FILE_URL: ${{ vars.CI_SIGNING_FILE_URL }}
+        run: |
+          "CI_SIGNING_ENABLED=false" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+          if ([string]::IsNullOrWhiteSpace($env:CODESIGN_PFX_BASE64) -or [string]::IsNullOrWhiteSpace($env:CODESIGN_PFX_PASSWORD)) {
+            Write-Host "::warning::CI signing skipped. Set secrets CODESIGN_PFX_BASE64 and CODESIGN_PFX_PASSWORD to enable signing."
+            return
+          }
+
+          $pfxPath = Join-Path $env:RUNNER_TEMP "codesign.pfx"
+          [System.IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:CODESIGN_PFX_BASE64.Trim()))
+
+          if (-not (Test-Path $pfxPath)) {
+            throw "Failed to materialize PFX certificate file."
+          }
+
+          $timestampUrl = if ([string]::IsNullOrWhiteSpace($env:CI_SIGNING_TIMESTAMP_URL)) { "http://timestamp.digicert.com" } else { $env:CI_SIGNING_TIMESTAMP_URL }
+          $description = if ([string]::IsNullOrWhiteSpace($env:CI_SIGNING_FILE_DESCRIPTION)) { "MietzeMatze's Zomboid Guide" } else { $env:CI_SIGNING_FILE_DESCRIPTION }
+          $fileUrl = if ([string]::IsNullOrWhiteSpace($env:CI_SIGNING_FILE_URL)) { "https://github.com/mZe184/ZomboidGuideReleases" } else { $env:CI_SIGNING_FILE_URL }
+
+          "CI_SIGNING_ENABLED=true" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "CI_SIGNING_PFX_PATH=$pfxPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "CI_SIGNING_TIMESTAMP_URL=$timestampUrl" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "CI_SIGNING_FILE_DESCRIPTION=$description" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "CI_SIGNING_FILE_URL=$fileUrl" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "CI signing enabled."
+
+      - name: Sign Published Binaries (optional)
+        if: env.CI_SIGNING_ENABLED == 'true'
+        shell: pwsh
+        env:
+          CODESIGN_PFX_PASSWORD: ${{ secrets.CODESIGN_PFX_PASSWORD }}
+        run: |
+          function Resolve-SigntoolPath {
+            $signtool = Get-Command signtool -ErrorAction SilentlyContinue
+            if ($null -ne $signtool) { return $signtool.Path }
+
+            $roots = @(
+              (Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\bin"),
+              (Join-Path ${env:ProgramFiles} "Windows Kits\10\bin")
+            ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and (Test-Path $_) }
+
+            foreach ($root in $roots) {
+              $versionFolders = Get-ChildItem -Path $root -Directory | Sort-Object Name -Descending
+              foreach ($folder in $versionFolders) {
+                $candidate = Join-Path $folder.FullName "x64\signtool.exe"
+                if (Test-Path $candidate) { return $candidate }
+              }
+            }
+
+            throw "signtool.exe not found."
+          }
+
+          $signtoolPath = Resolve-SigntoolPath
+          $targets = Get-ChildItem -Path "artifacts/publish/app" -Recurse -File |
+            Where-Object { $_.Extension -in ".exe", ".dll" }
+
+          if ($null -eq $targets -or $targets.Count -eq 0) {
+            throw "No signable binaries found in artifacts/publish/app."
+          }
+
+          foreach ($target in $targets) {
+            & $signtoolPath sign `
+              /fd SHA256 `
+              /td SHA256 `
+              /tr $env:CI_SIGNING_TIMESTAMP_URL `
+              /f $env:CI_SIGNING_PFX_PATH `
+              /p $env:CODESIGN_PFX_PASSWORD `
+              /d $env:CI_SIGNING_FILE_DESCRIPTION `
+              /du $env:CI_SIGNING_FILE_URL `
+              $target.FullName
+
+            if ($LASTEXITCODE -ne 0) {
+              throw "Signing failed: $($target.FullName)"
+            }
+
+            & $signtoolPath verify /pa /v $target.FullName *> $null
+            if ($LASTEXITCODE -ne 0) {
+              throw "Signature verification failed: $($target.FullName)"
+            }
+          }
+
+          Write-Host "Signed and verified $($targets.Count) binaries."
+
+      - name: Rebuild Update Feed From Signed Binaries (optional)
+        if: env.CI_SIGNING_ENABLED == 'true'
+        shell: pwsh
+        run: |
+          ./deployment/Create-UpdateFeed.ps1 `
+            -PublishDir "artifacts/publish/app" `
+            -FeedDir "artifacts/update-feed" `
+            -Version "${env:APP_VERSION}" `
+            -ExeName "ZomboidGuide.exe"
+
       - name: Pack Release Artifacts
         shell: pwsh
         run: |
@@ -115,7 +216,7 @@ jobs:
 
           if ([string]::IsNullOrWhiteSpace($prev)) {
             $log = git log --pretty=format:"- %s (%h)" -n 50
-            $rangeText = "(first tag – last 50 commits)"
+            $rangeText = "(first tag - last 50 commits)"
           } else {
             $log = git log --pretty=format:"- %s (%h)" "$prev..$tag"
             $rangeText = "$prev..$tag"
@@ -140,3 +241,12 @@ jobs:
           files: |
             artifacts/release/*.zip
             artifacts/release/SHA256SUMS.txt
+
+      - name: Cleanup CI Signing Certificate
+        if: always()
+        shell: pwsh
+        run: |
+          if (-not [string]::IsNullOrWhiteSpace($env:CI_SIGNING_PFX_PATH) -and (Test-Path $env:CI_SIGNING_PFX_PATH)) {
+            Remove-Item -Path $env:CI_SIGNING_PFX_PATH -Force
+            Write-Host "Removed temporary PFX file."
+          }
