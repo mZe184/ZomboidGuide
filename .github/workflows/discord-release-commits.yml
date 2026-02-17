@@ -1,83 +1,109 @@
-name: Discord - Release Commits
+name: Build and Publish Binary Release
 
 on:
-  release:
-    types: [published]
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: "Release tag (z.B. v0.1.8)"
-        required: true
+  push:
+    tags:
+      - "v*"
 
 permissions:
-  contents: read
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  notify:
-    runs-on: ubuntu-latest
+  release:
+    runs-on: windows-latest
+
     steps:
-      - name: Build changelog and post to Discord forum (new thread)
-        env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.release.tag_name || inputs.tag }}
-          URL: ${{ github.event.release.html_url || format('https://github.com/{0}/releases/tag/{1}', github.repository, inputs.tag) }}
-          CURRENT_REPO: ${{ github.repository }}
-        shell: bash
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+
+      - name: Resolve Version
+        shell: pwsh
         run: |
-          set -euo pipefail
+          $raw = "${{ github.ref_name }}"
+          if ([string]::IsNullOrWhiteSpace($raw)) {
+            throw "github.ref_name is empty."
+          }
 
-          if [ -z "${DISCORD_WEBHOOK:-}" ]; then
-            echo "DISCORD_WEBHOOK fehlt."
-            exit 1
-          fi
+          $version = if ($raw.StartsWith("v")) { $raw.Substring(1) } else { $raw }
+          "APP_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "APP_TAG=$raw" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "Release version: $version (tag: $raw)"
 
-          if [ -z "${TAG:-}" ]; then
-            echo "Kein Tag uebergeben (Release Event oder workflow_dispatch input)."
-            exit 1
-          fi
+      - name: Restore
+        run: dotnet restore ZomboidGuide.sln
 
-          REPO="${CURRENT_REPO}"
-          TOKEN="${GH_TOKEN}"
-          if [ -z "${TOKEN:-}" ]; then
-            echo "Kein GitHub Token verfuegbar."
-            exit 1
-          fi
+      - name: Build
+        run: dotnet build ZomboidGuide.sln -c Release --no-restore
 
-          PREV_TAG="$(curl -fsS \
-            -H "Authorization: Bearer ${TOKEN}" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${REPO}/releases" \
-            | jq -r '.[1].tag_name // empty')"
+      - name: Publish App + Update Feed
+        shell: pwsh
+        run: |
+          ./deployment/Build-Release.ps1 -Runtime "win-x64" -Configuration "Release" -Version "${env:APP_VERSION}"
 
-          if [ -z "${PREV_TAG}" ]; then
-            NOTES="(Kein vorheriger Release im aktuellen Repo gefunden.)"
-          else
-            NOTES="$(curl -fsS \
-              -H "Authorization: Bearer ${TOKEN}" \
-              -H "Accept: application/vnd.github+json" \
-              "https://api.github.com/repos/${REPO}/compare/${PREV_TAG}...${TAG}" \
-              | jq -r '.commits[].commit.message | split("\n")[0] | "- " + .' \
-              | head -n 20)"
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          choco install innosetup --yes --no-progress
 
-            if [ -z "${NOTES}" ] || [ "${NOTES}" = "null" ]; then
-              NOTES="(Keine Commits gefunden zwischen ${PREV_TAG} und ${TAG})"
-            fi
-          fi
+      - name: Build Installer Artifacts
+        shell: pwsh
+        run: |
+          $releaseDir = "artifacts/release"
+          New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
 
-          CONTENT="Neuer Release: **${TAG}**\n${URL}\n\n${NOTES}"
-          THREAD_NAME="Release ${TAG}"
+          $iscc = Get-Command iscc -ErrorAction SilentlyContinue
+          if ($null -eq $iscc) {
+            $fallbackIscc = Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"
+            if (-not (Test-Path $fallbackIscc)) {
+              throw "Inno Setup compiler (iscc) was not found."
+            }
+            $isccPath = $fallbackIscc
+          }
+          else {
+            $isccPath = $iscc.Path
+          }
 
-          # Discord Limit fuer content ist 2000 Zeichen.
-          if [ "${#CONTENT}" -gt 1900 ]; then
-            CONTENT="${CONTENT:0:1900}\n..."
-          fi
+          $sourceDir = (Resolve-Path "artifacts/publish/app").Path
+          $outputDir = (Resolve-Path $releaseDir).Path
 
-          PAYLOAD="$(jq -n \
-            --arg content "$CONTENT" \
-            --arg thread_name "$THREAD_NAME" \
-            '{content:$content, thread_name:$thread_name}')"
+          & $isccPath `
+            "/DMyAppVersion=$env:APP_VERSION" `
+            "/DSourceDir=$sourceDir" `
+            "/DOutputDir=$outputDir" `
+            "deployment/Installer.iss"
 
-          curl -fsS -H "Content-Type: application/json" \
-            -d "${PAYLOAD}" \
-            "${DISCORD_WEBHOOK}"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Installer build failed."
+          }
+
+          $installerFiles = Get-ChildItem -Path $releaseDir -Filter "*.exe" -File
+          if ($null -eq $installerFiles -or $installerFiles.Count -eq 0) {
+            throw "No installer executable was created."
+          }
+
+          $hashLines = @()
+          foreach ($installer in $installerFiles) {
+            $hashLines += ("{0}  {1}" -f (Get-FileHash $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $installer.Name)
+          }
+
+          $hashLines | Set-Content -Path (Join-Path $releaseDir "SHA256SUMS.txt") -Encoding utf8
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ github.token }}
+          tag_name: ${{ env.APP_TAG }}
+          name: ZomboidGuide ${{ env.APP_VERSION }}
+          generate_release_notes: true
+          files: |
+            artifacts/release/*.exe
+            artifacts/release/SHA256SUMS.txt
