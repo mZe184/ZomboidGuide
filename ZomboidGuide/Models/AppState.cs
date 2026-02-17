@@ -3,7 +3,7 @@ using System.Collections.Generic;
 
 namespace ZomboidGuide.Models;
 
-public sealed class AppState
+public sealed class AppState 
 {
     public string? GamePath { get; set; }
 
