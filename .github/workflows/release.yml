@@ -1,4 +1,4 @@
-
+﻿
 name: Build and Publish Binary Release
 
 on:
@@ -145,11 +145,12 @@ jobs:
           export TAG RELEASE_URL RELEASE_BODY
 
           # Build Discord post content (single-line python => no indentation issues)
-          CONTENT="$(python3 -c "import os; url=os.environ.get('RELEASE_URL','').strip(); tag=os.environ.get('TAG','').strip(); body=os.environ.get('RELEASE_BODY','').replace('\r\n','\n').strip(); header=f\"✅ **New Release:** {tag}\\n{url}\\n\\n**Release Notes:**\\n\"; max_len=1900; text=header+(body if body else '_(No release notes text found.)_'); text=(text[:max_len-20].rstrip()+'\\n… _(truncated)_') if len(text)>max_len else text; print(text)")"
+          CONTENT="$(python3 -c "import os; url=os.environ.get('RELEASE_URL','').strip(); tag=os.environ.get('TAG','').strip(); body=os.environ.get('RELEASE_BODY','').replace('\r\n','\n').strip(); header=f\"New Release: {tag}\\n{url}\\n\\nRelease Notes:\\n\"; max_len=1900; text=header+(body if body else '_(No release notes text found.)_'); text=(text[:max_len-20].rstrip()+'\\n... _(truncated)_') if len(text)>max_len else text; print(text)")"
 
           TITLE="ZomboidGuide ${TAG}"
 
           # Forum webhook => create new thread with first post
-          JSON="$(jq -n --arg name "$TITLE" --arg content "$CONTENT" '{name:$name, content:$content}')"
+          JSON="$(jq -n --arg thread_name "$TITLE" --arg content "$CONTENT" '{thread_name:$thread_name, content:$content}')"
 
           curl -sS -H "Content-Type: application/json" -d "$JSON" "$DISCORD_WEBHOOK"
+
