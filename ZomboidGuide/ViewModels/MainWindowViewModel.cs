@@ -1909,8 +1909,22 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private async Task RefreshAvailableLanguagesAsync()
     {
-        var languages = await Task.Run(() => _guideCatalogService.GetAvailableLanguageCodes(GamePath, IncludeMods));
-        var options = languages
+        var gameLanguages = await Task.Run(() => _guideCatalogService.GetAvailableLanguageCodes(GamePath, IncludeMods));
+        var allLanguages = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var language in _uiLocalizationService.GetSupportedLanguageCodes())
+        {
+            allLanguages.Add(NormalizeLanguageCode(language));
+        }
+
+        foreach (var language in gameLanguages)
+        {
+            allLanguages.Add(NormalizeLanguageCode(language));
+        }
+
+        var options = allLanguages
+            .OrderBy(code => code.Equals("EN", StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+            .ThenBy(code => code, StringComparer.OrdinalIgnoreCase)
             .Select(code => new LanguageOptionViewModel
             {
                 Code = code,
@@ -1933,9 +1947,7 @@ public partial class MainWindowViewModel : ViewModelBase
             AvailableLanguages.Add(option);
         }
 
-        var selectedCode = string.IsNullOrWhiteSpace(_state.LanguageCode)
-            ? "EN"
-            : _state.LanguageCode.ToUpperInvariant();
+        var selectedCode = NormalizeLanguageCode(_state.LanguageCode);
         var selectedOption = AvailableLanguages.FirstOrDefault(option =>
             option.Code.Equals(selectedCode, StringComparison.OrdinalIgnoreCase)) ?? AvailableLanguages.First();
 
@@ -1948,6 +1960,27 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             _suppressLanguageReload = false;
         }
+    }
+
+    private static string NormalizeLanguageCode(string? languageCode)
+    {
+        if (string.IsNullOrWhiteSpace(languageCode))
+        {
+            return "EN";
+        }
+
+        var normalized = languageCode
+            .Trim()
+            .ToUpperInvariant()
+            .Replace("-", string.Empty)
+            .Replace("_", string.Empty);
+
+        return normalized switch
+        {
+            "PTB" => "PTBR",
+            "UK" => "UA",
+            _ => normalized,
+        };
     }
 
     private async Task TrySyncSessionOnStartupAsync()

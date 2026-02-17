@@ -3,8 +3,10 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Runtime.Versioning;
 using System.Text;
 using System.Text.RegularExpressions;
+using Microsoft.Win32;
 using ZomboidGuide.Models;
 
 namespace ZomboidGuide.Services;
@@ -17,6 +19,9 @@ public sealed class ZomboidDataParser
     private static readonly Regex ProfessionRegex = new(
         @"ProfessionFactory\.addProfession\(\s*""(?<id>[^""]+)""\s*,\s*(?<name>[^,]+),",
         RegexOptions.Compiled);
+    private static readonly Regex SteamLibraryPathRegex = new(
+        @"""path""\s*""(?<path>[^""]+)""",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     public GuideCatalog Parse(string gamePath, bool includeMods, string? selectedLanguageCode = null)
     {
@@ -57,28 +62,146 @@ public sealed class ZomboidDataParser
 
     public string? TryAutoDetectGamePath()
     {
-        var candidates = new List<string>();
+        var candidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         var programFilesX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
         var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
 
         if (!string.IsNullOrWhiteSpace(programFilesX86))
         {
-            candidates.Add(Path.Combine(programFilesX86, "Steam", "steamapps", "common", "ProjectZomboid"));
+            AddSteamInstallCandidates(candidates, Path.Combine(programFilesX86, "Steam"));
         }
 
         if (!string.IsNullOrWhiteSpace(programFiles))
         {
-            candidates.Add(Path.Combine(programFiles, "Steam", "steamapps", "common", "ProjectZomboid"));
+            AddSteamInstallCandidates(candidates, Path.Combine(programFiles, "Steam"));
+        }
+
+        foreach (var steamRoot in GetSteamRootsFromRegistry())
+        {
+            AddSteamInstallCandidates(candidates, steamRoot);
         }
 
         foreach (var drive in DriveInfo.GetDrives().Where(drive => drive is { IsReady: true, DriveType: DriveType.Fixed }))
         {
-            candidates.Add(Path.Combine(drive.RootDirectory.FullName, "SteamLibrary", "steamapps", "common", "ProjectZomboid"));
-            candidates.Add(Path.Combine(drive.RootDirectory.FullName, "Games", "SteamLibrary", "steamapps", "common", "ProjectZomboid"));
+            AddCandidate(candidates, Path.Combine(drive.RootDirectory.FullName, "SteamLibrary", "steamapps", "common", "ProjectZomboid"));
+            AddCandidate(candidates, Path.Combine(drive.RootDirectory.FullName, "Games", "SteamLibrary", "steamapps", "common", "ProjectZomboid"));
         }
 
         return candidates.FirstOrDefault(path => Directory.Exists(Path.Combine(path, "media")));
+    }
+
+    private static void AddSteamInstallCandidates(ISet<string> candidates, string? steamRootPath)
+    {
+        if (string.IsNullOrWhiteSpace(steamRootPath))
+        {
+            return;
+        }
+
+        var normalizedSteamRoot = steamRootPath
+            .Trim()
+            .Replace('/', Path.DirectorySeparatorChar);
+        AddCandidate(candidates, Path.Combine(normalizedSteamRoot, "steamapps", "common", "ProjectZomboid"));
+
+        var libraryFoldersPath = Path.Combine(normalizedSteamRoot, "steamapps", "libraryfolders.vdf");
+        foreach (var libraryRoot in ReadSteamLibraryRoots(libraryFoldersPath))
+        {
+            AddCandidate(candidates, Path.Combine(libraryRoot, "steamapps", "common", "ProjectZomboid"));
+        }
+    }
+
+    private static void AddCandidate(ISet<string> candidates, string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return;
+        }
+
+        candidates.Add(path.Trim());
+    }
+
+    private static IReadOnlyCollection<string> GetSteamRootsFromRegistry()
+    {
+        var roots = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (!OperatingSystem.IsWindows())
+        {
+            return roots;
+        }
+
+        AddSteamRootFromRegistry(roots, Registry.CurrentUser, @"Software\Valve\Steam", "SteamPath");
+        AddSteamRootFromRegistry(roots, Registry.CurrentUser, @"Software\Valve\Steam", "SteamExe");
+        AddSteamRootFromRegistry(roots, Registry.LocalMachine, @"SOFTWARE\WOW6432Node\Valve\Steam", "InstallPath");
+        AddSteamRootFromRegistry(roots, Registry.LocalMachine, @"SOFTWARE\Valve\Steam", "InstallPath");
+
+        return roots;
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static void AddSteamRootFromRegistry(
+        ISet<string> roots,
+        RegistryKey baseKey,
+        string subKey,
+        string valueName)
+    {
+        try
+        {
+            using var key = baseKey.OpenSubKey(subKey, writable: false);
+            var rawValue = key?.GetValue(valueName)?.ToString();
+            if (string.IsNullOrWhiteSpace(rawValue))
+            {
+                return;
+            }
+
+            var value = rawValue.Trim().Replace('/', Path.DirectorySeparatorChar);
+            if (value.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            {
+                value = Path.GetDirectoryName(value) ?? string.Empty;
+            }
+
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                roots.Add(value);
+            }
+        }
+        catch
+        {
+            // Ignore registry access issues and continue with other detection paths.
+        }
+    }
+
+    private static IReadOnlyCollection<string> ReadSteamLibraryRoots(string libraryFoldersPath)
+    {
+        if (!File.Exists(libraryFoldersPath))
+        {
+            return [];
+        }
+
+        var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var content = SafeReadText(libraryFoldersPath);
+        if (string.IsNullOrWhiteSpace(content))
+        {
+            return result;
+        }
+
+        foreach (Match match in SteamLibraryPathRegex.Matches(content))
+        {
+            var rawPath = match.Groups["path"].Value;
+            if (string.IsNullOrWhiteSpace(rawPath))
+            {
+                continue;
+            }
+
+            var normalized = rawPath
+                .Replace(@"\\", @"\")
+                .Replace('/', Path.DirectorySeparatorChar)
+                .Trim();
+            if (!string.IsNullOrWhiteSpace(normalized))
+            {
+                result.Add(normalized);
+            }
+        }
+
+        return result;
     }
 
     public IReadOnlyList<string> GetAvailableLanguageCodes(string? gamePath, bool includeMods)

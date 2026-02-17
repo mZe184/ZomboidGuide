@@ -51,6 +51,11 @@ public sealed class UiLocalizationService
         return englishText;
     }
 
+    public IReadOnlyList<string> GetSupportedLanguageCodes()
+    {
+        return SupportedLanguageCodes;
+    }
+
     private void LoadAllTranslations()
     {
         foreach (var code in SupportedLanguageCodes)
