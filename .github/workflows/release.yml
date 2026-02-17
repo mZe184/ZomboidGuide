@@ -1,4 +1,4 @@
-name: Build Binary Release
+name: Build + Release + Discord
 
 on:
   push:
@@ -15,7 +15,6 @@ concurrency:
 jobs:
   release:
     runs-on: windows-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,14 +28,10 @@ jobs:
         shell: pwsh
         run: |
           $raw = "${{ github.ref_name }}"
-          if ([string]::IsNullOrWhiteSpace($raw)) {
-            throw "github.ref_name is empty."
-          }
-
+          if ([string]::IsNullOrWhiteSpace($raw)) { throw "github.ref_name is empty." }
           $version = if ($raw.StartsWith("v")) { $raw.Substring(1) } else { $raw }
           "APP_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "APP_TAG=$raw" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          Write-Host "Release version: $version (tag: $raw)"
 
       - name: Restore
         run: dotnet restore ZomboidGuide.sln
@@ -46,31 +41,23 @@ jobs:
 
       - name: Publish App + Update Feed
         shell: pwsh
-        run: |
-          ./deployment/Build-Release.ps1 -Runtime "win-x64" -Configuration "Release" -Version "${env:APP_VERSION}"
+        run: ./deployment/Build-Release.ps1 -Runtime "win-x64" -Configuration "Release" -Version "${env:APP_VERSION}"
 
       - name: Install Inno Setup
         shell: pwsh
-        run: |
-          choco install innosetup --yes --no-progress
+        run: choco install innosetup --yes --no-progress
 
       - name: Build Installer Artifacts
         shell: pwsh
         run: |
           $releaseDir = "artifacts/release"
           New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
-
           $iscc = Get-Command iscc -ErrorAction SilentlyContinue
           if ($null -eq $iscc) {
             $fallbackIscc = Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"
-            if (-not (Test-Path $fallbackIscc)) {
-              throw "Inno Setup compiler (iscc) was not found."
-            }
+            if (-not (Test-Path $fallbackIscc)) { throw "ISCC.exe not found." }
             $isccPath = $fallbackIscc
-          }
-          else {
-            $isccPath = $iscc.Path
-          }
+          } else { $isccPath = $iscc.Path }
 
           $sourceDir = (Resolve-Path "artifacts/publish/app").Path
           $outputDir = (Resolve-Path $releaseDir).Path
@@ -80,30 +67,37 @@ jobs:
             "/DSourceDir=$sourceDir" `
             "/DOutputDir=$outputDir" `
             "deployment/Installer.iss"
-
-          if ($LASTEXITCODE -ne 0) {
-            throw "Installer build failed."
-          }
+          if ($LASTEXITCODE -ne 0) { throw "Installer build failed." }
 
           $installerFiles = Get-ChildItem -Path $releaseDir -Filter "*.exe" -File
-          if ($null -eq $installerFiles -or $installerFiles.Count -eq 0) {
-            throw "No installer executable was created."
-          }
+          if (-not $installerFiles) { throw "No installer exe created." }
 
-          $hashLines = @()
-          foreach ($installer in $installerFiles) {
-            $hashLines += ("{0}  {1}" -f (Get-FileHash $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $installer.Name)
+          $hashLines = foreach ($installer in $installerFiles) {
+            ("{0}  {1}" -f (Get-FileHash $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $installer.Name)
           }
-
           $hashLines | Set-Content -Path (Join-Path $releaseDir "SHA256SUMS.txt") -Encoding utf8
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          token: ${{ github.token }}
           tag_name: ${{ env.APP_TAG }}
           name: ZomboidGuide ${{ env.APP_VERSION }}
           generate_release_notes: true
           files: |
             artifacts/release/*.exe
             artifacts/release/SHA256SUMS.txt
+
+  discord:
+    runs-on: ubuntu-latest
+    needs: release
+    steps:
+      - name: Post to Discord webhook
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          TAG: ${{ github.ref_name }}
+          URL: ${{ format('https://github.com/{0}/releases/tag/{1}', github.repository, github.ref_name) }}
+        run: |
+          test -n "$DISCORD_WEBHOOK"
+          content="✅ New release: **$TAG**\n$URL"
+          payload=$(jq -n --arg content "$content" '{content:$content}')
+          curl -sS -H "Content-Type: application/json" -d "$payload" "$DISCORD_WEBHOOK"
