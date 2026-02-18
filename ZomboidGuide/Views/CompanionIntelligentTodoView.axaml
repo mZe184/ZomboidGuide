@@ -1,0 +1,64 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:ZomboidGuide.ViewModels"
+             x:Class="ZomboidGuide.Views.CompanionIntelligentTodoView"
+             x:DataType="vm:CompanionIntelligentTodoViewModel">
+    <ScrollViewer>
+        <StackPanel Margin="8"
+                    Spacing="10">
+            <TextBlock Classes="title"
+                       FontSize="22"
+                       Text="{Binding Title}"/>
+            <TextBlock Classes="caption"
+                       Text="{Binding Subtitle}"/>
+            <TextBlock Classes="caption"
+                       Text="{Binding ContextText}"/>
+
+            <ItemsControl ItemsSource="{Binding TodoItems}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:CompanionTodoItemRowViewModel">
+                        <Border Classes="item-card"
+                                Opacity="{Binding RowOpacity}">
+                            <Grid RowDefinitions="Auto,Auto"
+                                  ColumnDefinitions="Auto,*,Auto">
+                                <Border Grid.Column="0"
+                                        Classes="state-badge"
+                                        Margin="0,0,8,0"
+                                        Background="{Binding PriorityBadgeBrush}">
+                                    <TextBlock Classes="state-badge-text"
+                                               Text="{Binding PriorityText}"/>
+                                </Border>
+
+                                <StackPanel Grid.Column="1"
+                                            Spacing="4">
+                                    <TextBlock Classes="item-title"
+                                               Text="{Binding Title}"/>
+                                    <TextBlock Classes="caption"
+                                               Text="{Binding MetaText}"/>
+                                </StackPanel>
+
+                                <StackPanel Grid.Column="2"
+                                            Orientation="Horizontal"
+                                            Spacing="6"
+                                            HorizontalAlignment="Right">
+                                    <Button Padding="8,4"
+                                            Command="{Binding PinCommand}">
+                                        <TextBlock Text="{Binding PinButtonText}"/>
+                                    </Button>
+                                    <Button Padding="8,4"
+                                            Command="{Binding DoneCommand}">
+                                        <TextBlock Text="{Binding DoneButtonText}"/>
+                                    </Button>
+                                    <Button Padding="8,4"
+                                            Command="{Binding DismissCommand}">
+                                        <TextBlock Text="Dismiss"/>
+                                    </Button>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

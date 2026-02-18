@@ -1,0 +1,137 @@
+﻿<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:ZomboidGuide.ViewModels"
+             x:Class="ZomboidGuide.Views.CompanionSurvivalView"
+             x:DataType="vm:CompanionSurvivalViewModel">
+    <ScrollViewer>
+        <StackPanel Margin="8" Spacing="10">
+            <TextBlock Classes="title"
+                       FontSize="22"
+                       Text="{Binding Title}"/>
+
+            <Grid ColumnDefinitions="*,10,*">
+                <Border Classes="item-card"
+                        Padding="10">
+                    <StackPanel Spacing="6">
+                        <TextBlock Classes="item-title"
+                                   Text="Combat"/>
+                        <TextBlock Classes="caption"
+                                   Text="{Binding KillsTotalText, StringFormat='Total Kills: {0}'}"/>
+                        <TextBlock Classes="caption"
+                                   Text="{Binding KillsThisSessionText, StringFormat='Kills This Session: {0}'}"/>
+                        <TextBlock Classes="caption"
+                                   Text="{Binding KillsPerHourText, StringFormat='Kills / hour (played): {0}'}"/>
+                        <TextBlock Classes="caption"
+                                   Text="{Binding TimeSurvivedText, StringFormat='Time survived: {0}'}"/>
+                    </StackPanel>
+                </Border>
+
+                <Border Grid.Column="2"
+                        Classes="item-card"
+                        Padding="10">
+                    <StackPanel Spacing="6">
+                        <TextBlock FontSize="22"
+                                   FontWeight="Bold"
+                                   Foreground="{Binding DangerDisplayBrush}"
+                                   Text="{Binding DangerDisplayText}"/>
+                        <TextBlock Classes="caption"
+                                   Text="{Binding DangerIndex, StringFormat='Index: {0}/100'}"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <Border Classes="item-card"
+                    Padding="10">
+                <StackPanel Spacing="6">
+                    <TextBlock Classes="item-title"
+                               Text="Top Issues"/>
+                    <ItemsControl ItemsSource="{Binding TopIssues}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Classes="caption"
+                                           Text="{Binding .}"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+
+            <Border Classes="item-card"
+                    Padding="10">
+                <StackPanel Spacing="6">
+                    <TextBlock Classes="item-title"
+                               Text="Active Moodles"/>
+                    <ItemsControl ItemsSource="{Binding ActiveMoodles}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel Orientation="Horizontal"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:CompanionMoodleIconViewModel">
+                                <Border Classes="item-card"
+                                        Padding="4"
+                                        Margin="0,0,6,6">
+                                    <Image Width="60"
+                                           Height="60"
+                                           Source="{Binding Icon}"
+                                           ToolTip.Tip="{Binding Label}"/>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+
+            <Border Classes="item-card"
+                    Padding="10">
+                <StackPanel Spacing="6">
+                    <TextBlock Classes="item-title"
+                               Text="Current Vitals"/>
+                    <TextBlock Classes="caption"
+                               Text="{Binding FatigueValue, StringFormat='Müdigkeit: {0}%'}"/>
+                    <ProgressBar Minimum="0"
+                                 Maximum="100"
+                                 Value="{Binding FatigueValue}"/>
+                    <TextBlock Classes="caption"
+                               Text="{Binding TirednessValue, StringFormat='Erschöpfung: {0}%'}"/>
+                    <ProgressBar Minimum="0"
+                                 Maximum="100"
+                                 Value="{Binding TirednessValue}"/>
+                    <TextBlock Classes="caption"
+                               Text="{Binding EnduranceValue, StringFormat='Ausdauer: {0}%'}"/>
+                    <ProgressBar Minimum="0"
+                                 Maximum="100"
+                                 Value="{Binding EnduranceValue}"/>
+                    <TextBlock Classes="caption"
+                               Text="{Binding HungerValue, StringFormat='Hunger: {0}%'}"/>
+                    <ProgressBar Minimum="0"
+                                 Maximum="100"
+                                 Value="{Binding HungerValue}"/>
+                    <TextBlock Classes="caption"
+                               Text="{Binding ThirstValue, StringFormat='Durst: {0}%'}"/>
+                    <ProgressBar Minimum="0"
+                                 Maximum="100"
+                                 Value="{Binding ThirstValue}"/>
+                    <TextBlock Classes="caption"
+                               Text="{Binding PainValue, StringFormat='Schmerz: {0}%'}"/>
+                    <ProgressBar Minimum="0"
+                                 Maximum="100"
+                                 Value="{Binding PainValue}"/>
+                    <TextBlock Classes="caption"
+                               Text="{Binding OutOfBreathValue, StringFormat='Außer Atem: {0}%'}"/>
+                    <ProgressBar Minimum="0"
+                                 Maximum="100"
+                                 Value="{Binding OutOfBreathValue}"/>
+                    <TextBlock Classes="caption"
+                               Text="{Binding QueasyValue, StringFormat='Übelkeit: {0}%'}"/>
+                    <ProgressBar Minimum="0"
+                                 Maximum="100"
+                                 Value="{Binding QueasyValue}"/>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>
+
+

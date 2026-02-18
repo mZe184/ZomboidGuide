@@ -1,0 +1,44 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:ZomboidGuide.ViewModels"
+             x:Class="ZomboidGuide.Views.CompanionSleepView"
+             x:DataType="vm:CompanionSleepViewModel">
+    <StackPanel Margin="8"
+                Spacing="10">
+        <TextBlock Classes="title"
+                   FontSize="22"
+                   Text="{Binding Title}"/>
+
+        <Border Classes="item-card"
+                Padding="12">
+            <StackPanel Spacing="8">
+                <TextBlock Classes="item-title"
+                           Text="Recommendation"/>
+                <TextBlock FontSize="28"
+                           FontWeight="Bold"
+                           Text="{Binding ActionText}"/>
+                <TextBlock Classes="caption"
+                           Text="{Binding ConfidenceText, StringFormat='Confidence: {0}'}"/>
+                <ProgressBar Minimum="0"
+                             Maximum="100"
+                             Value="{Binding ConfidencePercent}"/>
+            </StackPanel>
+        </Border>
+
+        <Border Classes="item-card"
+                Padding="12">
+            <StackPanel Spacing="6">
+                <TextBlock Classes="item-title"
+                           Text="Reasons"/>
+                <ItemsControl ItemsSource="{Binding Reasons}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Classes="caption"
+                                       Text="{Binding .}"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </Border>
+    </StackPanel>
+</UserControl>

@@ -17,6 +17,10 @@ public sealed class AppState
 
     public bool RiskIndicatorEnabled { get; set; }
 
+    public bool OverlayAutoStart { get; set; }
+
+    public int OverlayPort { get; set; } = 8765;
+
     public string BookStatusFilterKey { get; set; } = "all";
 
     public string MagazineStatusFilterKey { get; set; } = "all";

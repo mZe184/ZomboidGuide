@@ -44,4 +44,32 @@ public sealed class SessionSyncResult
     public int WeightRiskScore { get; init; }
 
     public string RiskNotes { get; init; } = string.Empty;
+
+    public int? ZombieKillsTotal { get; init; }
+
+    public double FatigueLevel { get; init; }
+
+    public double TirednessLevel { get; init; }
+
+    public double EnduranceLevel { get; init; } = 1.0;
+
+    public double HungerLevel { get; init; }
+
+    public double ThirstLevel { get; init; }
+
+    public double PainLevel { get; init; }
+
+    public double OutOfBreathLevel { get; init; }
+
+    public double QueasyLevel { get; init; }
+
+    public double PanicLevel { get; init; }
+
+    public double StressLevel { get; init; }
+
+    public double? InGameSurvivedHours { get; init; }
+
+    public double? RealPlayedHours { get; init; }
+
+    public IReadOnlyCollection<string> ActiveMoodles { get; init; } = Array.Empty<string>();
 }

@@ -162,7 +162,7 @@
           RowDefinitions="Auto,Auto,*,Auto">
         <Border Classes="card">
             <Grid RowDefinitions="Auto,Auto,Auto"
-                  ColumnDefinitions="214,*,Auto,300">
+                  ColumnDefinitions="224,*,Auto,300">
                 <Image Grid.RowSpan="3"
                        Grid.Column="0"
                        Width="200"
@@ -175,7 +175,7 @@
                 <StackPanel Grid.Column="1"
                             Spacing="4"
                             VerticalAlignment="Center"
-                            HorizontalAlignment="Center">
+                            HorizontalAlignment="Left">
                     <TextBlock Classes="title"
                                Text="{Binding HeaderTitleText}"/>
                     <TextBlock Classes="caption"
@@ -294,10 +294,10 @@
                               OnContent="{Binding RiskIndicatorOnText}"
                               IsChecked="{Binding RiskIndicatorEnabled, Mode=TwoWay}"/>
 
-                <Border Grid.RowSpan="6"
-                        Grid.ColumnSpan="4"
-                        Margin="0,8,0,0"
-                        Padding="12,10"
+                <Border Grid.RowSpan="4"
+                         Grid.ColumnSpan="4"
+                         Margin="0,8,0,0"
+                         Padding="12,10"
                         MinWidth="420"
                         MaxWidth="620"
                         HorizontalAlignment="Center"
@@ -508,6 +508,34 @@
                                   ItemTemplate="{StaticResource TodoTaskTemplate}"
                                   ItemsSource="{Binding TodoItems}"/>
                     </Grid>
+                </TabItem>
+
+                <TabItem>
+                    <TabItem.Header>
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <material:MaterialIcon Kind="AccountGroupOutline" Width="16" Height="16"/>
+                            <TextBlock Classes="tab-title"
+                                       VerticalAlignment="Center"
+                                       Text="{Binding CompanionTabHeaderText}"/>
+                        </StackPanel>
+                    </TabItem.Header>
+                    <TabControl Margin="2">
+                        <TabItem Header="{Binding CompanionSurvivalTabText}">
+                            <ContentControl Content="{Binding CompanionSurvivalPage}"/>
+                        </TabItem>
+                        <TabItem Header="{Binding CompanionIntelligentTodoTabText}">
+                            <ContentControl Content="{Binding CompanionIntelligentTodoPage}"/>
+                        </TabItem>
+                        <TabItem Header="{Binding CompanionSleepTabText}">
+                            <ContentControl Content="{Binding CompanionSleepPage}"/>
+                        </TabItem>
+                        <TabItem Header="{Binding CompanionRunsTabText}">
+                            <ContentControl Content="{Binding CompanionRunsPage}"/>
+                        </TabItem>
+                        <TabItem Header="{Binding CompanionOverlayTabText}">
+                            <ContentControl Content="{Binding CompanionOverlayPage}"/>
+                        </TabItem>
+                    </TabControl>
                 </TabItem>
                 </TabControl>
             </Grid>

@@ -19,6 +19,14 @@ public sealed class SessionSyncService
     private static readonly Regex WorldDictionaryFullTypeRegex = new(@"fulltype\s*=\s*""([^""]+)""", RegexOptions.Compiled);
     private static readonly Regex PrintablePhraseRegex = new(@"[A-Za-z][A-Za-z0-9 '\-:]{4,}", RegexOptions.Compiled);
     private static readonly Regex WeightValueRegex = new(@"weight\s*[:=]?\s*(\d{2,3}(?:[.,]\d)?)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex ZombieKillsRegex = new(@"(?:zombiekills|zombiekillcount|killcount)[^0-9]{0,12}(\d{1,7})", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly string[] ZombieKillsKeywords =
+    [
+        "zombiekills",
+        "zombiekillcount",
+        "killcount",
+        "zombieskilled",
+    ];
     private static readonly Regex InventoryItemTokenRegex = new(@"^[A-Za-z0-9_]+\.[A-Za-z0-9_]+$", RegexOptions.Compiled);
     private static readonly Regex InventoryBookTokenRegex = new(@"(?:^|[.:])Book[A-Za-z]+[0-9]+$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex LevelRegex = new(@"(\d+)", RegexOptions.Compiled);
@@ -47,6 +55,21 @@ public sealed class SessionSyncService
         "hungry", "thirsty", "stressed", "unhappy", "queasy", "nervous", "agitated", "depressed",
     ];
 
+    private static readonly string[] OutOfBreathKeywords =
+    [
+        "outofbreath", "breath", "heavybreathing", "exertion", "exhausted", "winded",
+    ];
+
+    private static readonly string[] QueasyKeywords =
+    [
+        "queasy", "nausea", "nauseous", "sickness", "foodsickness", "badsmell", "corpse",
+    ];
+
+    private static readonly string[] BadSmellKeywords =
+    [
+        "badsmell", "corpse", "rotting", "stench",
+    ];
+
     private static readonly string[] FoodInventoryKeywords =
     [
         "canned", "beans", "soup", "stew", "rice", "pasta", "tuna", "fish", "meat", "fruit", "vegetable", "snack", "chips", "bread",
@@ -72,6 +95,103 @@ public sealed class SessionSyncService
         "sack",
         "firstaid",
         "medkit",
+    ];
+    private const int CharacterStatsCount = 24;
+    private const int CharacterStatsBlockLength = CharacterStatsCount * 4;
+    private const int CharacterStatIndexEndurance = 3;
+    private const int CharacterStatIndexFatigue = 4;
+    private const int CharacterStatIndexFoodSickness = 6;
+    private const int CharacterStatIndexHunger = 7;
+    private const int CharacterStatIndexMorale = 10;
+    private const int CharacterStatIndexPain = 12;
+    private const int CharacterStatIndexPanic = 13;
+    private const int CharacterStatIndexSanity = 15;
+    private const int CharacterStatIndexSickness = 16;
+    private const int CharacterStatIndexStress = 17;
+    private const int CharacterStatIndexTemperature = 18;
+    private const int CharacterStatIndexThirst = 19;
+    private const int CharacterStatIndexZombieFever = 22;
+    private const int CharacterStatIndexZombieInfection = 23;
+    private static readonly double[] CharacterStatMinimums =
+    [
+        0.0,   // Anger
+        0.0,   // Boredom
+        0.0,   // Discomfort
+        0.0,   // Endurance
+        0.0,   // Fatigue
+        -1.0,  // Fitness
+        0.0,   // FoodSickness
+        0.0,   // Hunger
+        0.0,   // Idleness
+        0.0,   // Intoxication
+        0.0,   // Morale
+        0.0,   // NicotineWithdrawal
+        0.0,   // Pain
+        0.0,   // Panic
+        0.0,   // Poison
+        0.0,   // Sanity
+        0.0,   // Sickness
+        0.0,   // Stress
+        20.0,  // Temperature
+        0.0,   // Thirst
+        0.0,   // Unhappiness
+        0.0,   // Wetness
+        0.0,   // ZombieFever
+        0.0,   // ZombieInfection
+    ];
+    private static readonly double[] CharacterStatMaximums =
+    [
+        1.0,    // Anger
+        100.0,  // Boredom
+        100.0,  // Discomfort
+        1.0,    // Endurance
+        1.0,    // Fatigue
+        1.0,    // Fitness
+        100.0,  // FoodSickness
+        1.0,    // Hunger
+        1.0,    // Idleness
+        100.0,  // Intoxication
+        1.0,    // Morale
+        0.51,   // NicotineWithdrawal
+        100.0,  // Pain
+        100.0,  // Panic
+        100.0,  // Poison
+        1.0,    // Sanity
+        1.0,    // Sickness
+        1.0,    // Stress
+        40.0,   // Temperature
+        1.0,    // Thirst
+        100.0,  // Unhappiness
+        100.0,  // Wetness
+        100.0,  // ZombieFever
+        100.0,  // ZombieInfection
+    ];
+    private static readonly double[] CharacterStatDefaults =
+    [
+        0.0,  // Anger
+        0.0,  // Boredom
+        0.0,  // Discomfort
+        1.0,  // Endurance
+        0.0,  // Fatigue
+        0.0,  // Fitness
+        0.0,  // FoodSickness
+        0.0,  // Hunger
+        0.0,  // Idleness
+        0.0,  // Intoxication
+        1.0,  // Morale
+        0.0,  // NicotineWithdrawal
+        0.0,  // Pain
+        0.0,  // Panic
+        0.0,  // Poison
+        1.0,  // Sanity
+        0.0,  // Sickness
+        0.0,  // Stress
+        37.0, // Temperature
+        0.0,  // Thirst
+        0.0,  // Unhappiness
+        0.0,  // Wetness
+        0.0,  // ZombieFever
+        0.0,  // ZombieInfection
     ];
 
     private static readonly IReadOnlyDictionary<string, string> SkillDisplayMap =
@@ -209,6 +329,11 @@ public sealed class SessionSyncService
             var riskAssessment = includeRiskAssessment
                 ? EvaluateRisk(playerRow, normalizedTokenSet, normalizedPhraseSet, inventoryItemTokens)
                 : SessionRiskAssessment.None;
+            var zombieKillsFromPlayerData = TryExtractZombieKills(playerRow.Data);
+            var zombieKillsFromGlobalModData = TryExtractZombieKillsFromGlobalModData(savePath, playerRow.Name);
+            var zombieKillsTotal = ResolveZombieKills(zombieKillsFromGlobalModData, zombieKillsFromPlayerData);
+            var inGameSurvivedHours = TryExtractInGameSurvivedHours(savePath);
+            var realPlayedHours = TryConvertInGameHoursToRealPlayedHours(savePath, inGameSurvivedHours);
 
             return new SessionSyncResult
             {
@@ -231,6 +356,20 @@ public sealed class SessionSyncService
                 MoodleRiskScore = riskAssessment.MoodleScore,
                 WeightRiskScore = riskAssessment.WeightScore,
                 RiskNotes = riskAssessment.Note,
+                ZombieKillsTotal = zombieKillsTotal,
+                FatigueLevel = riskAssessment.Fatigue,
+                TirednessLevel = riskAssessment.Tiredness,
+                EnduranceLevel = riskAssessment.Endurance,
+                HungerLevel = riskAssessment.Hunger,
+                ThirstLevel = riskAssessment.Thirst,
+                PainLevel = riskAssessment.Pain,
+                OutOfBreathLevel = riskAssessment.OutOfBreath,
+                QueasyLevel = riskAssessment.Queasy,
+                PanicLevel = riskAssessment.Panic,
+                StressLevel = riskAssessment.Stress,
+                InGameSurvivedHours = inGameSurvivedHours,
+                RealPlayedHours = realPlayedHours,
+                ActiveMoodles = riskAssessment.ActiveMoodles.ToArray(),
                 Message =
                     $"Session geladen: Bücher inv/gelesen/obsolete {matchedBooks.Count}/{readBooks.Count}/{obsoleteBooks.Count}, " +
                     $"Magazine inv/gelesen {matchedMagazines.Count}/{readMagazines.Count}, Rezepte gelernt {learnedRecipes.Count}",
@@ -1647,7 +1786,24 @@ public sealed class SessionSyncService
                 FoodScore: 20,
                 MoodleScore: 20,
                 WeightScore: 5,
-                Note: "Character state is dead.");
+                Note: "Character state is dead.",
+                Fatigue: 1.0,
+                Tiredness: 1.0,
+                Endurance: 0.0,
+                Hunger: 1.0,
+                Thirst: 1.0,
+                Pain: 1.0,
+                OutOfBreath: 1.0,
+                Queasy: 1.0,
+                Panic: 1.0,
+                Stress: 1.0,
+                ActiveMoodles:
+                [
+                    "Dead",
+                    "Pain 100%",
+                    "Out of Breath 100%",
+                    "Queasy 100%",
+                ]);
         }
 
         var searchTokens = new HashSet<string>(normalizedTokenSet, StringComparer.OrdinalIgnoreCase);
@@ -1668,34 +1824,68 @@ public sealed class SessionSyncService
         var severeInjuryMatches = CountKeywordMatches(searchTokens, SevereInjuryKeywords);
         var warningInjuryMatches = CountKeywordMatches(searchTokens, InjuryWarningKeywords);
         var injuryScore = Math.Min(45, severeInjuryMatches * 18 + warningInjuryMatches * 8);
+        CharacterStatsSnapshot? directStats = TryExtractCharacterStats(playerRow.Data, out var extractedStats)
+            ? extractedStats
+            : null;
+        if (directStats.HasValue)
+        {
+            var injuryFromStats = Math.Clamp(
+                (int)Math.Round(
+                    directStats.Value.Pain * 20.0 +
+                    directStats.Value.Sickness * 12.0 +
+                    directStats.Value.FoodSickness * 6.0 +
+                    directStats.Value.ZombieFever * 10.0 +
+                    directStats.Value.ZombieInfection * 14.0),
+                0,
+                45);
+            injuryScore = Math.Max(injuryScore, injuryFromStats);
+        }
 
         var exhaustionMatches = CountKeywordMatches(searchTokens, ExhaustionKeywords);
         var exhaustionScore = Math.Min(30, exhaustionMatches * 9);
+        if (directStats.HasValue)
+        {
+            var exhaustionFromStats = Math.Clamp(
+                (int)Math.Round((directStats.Value.Fatigue + (1.0 - directStats.Value.Endurance)) * 15.0),
+                0,
+                30);
+            exhaustionScore = Math.Max(exhaustionScore, exhaustionFromStats);
+        }
 
         var criticalMoodleMatches = CountKeywordMatches(searchTokens, CriticalMoodleKeywords);
         var warningMoodleMatches = CountKeywordMatches(searchTokens, WarningMoodleKeywords);
         var moodleScore = Math.Min(35, criticalMoodleMatches * 12 + warningMoodleMatches * 6);
+        if (directStats.HasValue)
+        {
+            var moodleFromStats = Math.Clamp(
+                (int)Math.Round(directStats.Value.Panic * 20.0 + directStats.Value.Stress * 15.0),
+                0,
+                35);
+            moodleScore = Math.Max(moodleScore, moodleFromStats);
+        }
 
         var foodCount = CountInventoryMatches(normalizedInventory, FoodInventoryKeywords);
         var waterCount = CountInventoryMatches(normalizedInventory, WaterInventoryKeywords);
-        var foodScore = foodCount switch
+        var hungerScore = foodCount switch
         {
             <= 0 => 30,
             <= 2 => 18,
             <= 5 => 8,
             _ => 0,
         };
-
-        if (waterCount == 0)
+        var thirstPenalty = waterCount switch
         {
-            foodScore += 20;
-        }
-        else if (waterCount == 1)
+            <= 0 => 20,
+            1 => 8,
+            _ => 0,
+        };
+        if (directStats.HasValue)
         {
-            foodScore += 8;
+            hungerScore = Math.Clamp((int)Math.Round(directStats.Value.Hunger * 30.0), 0, 30);
+            thirstPenalty = Math.Clamp((int)Math.Round(directStats.Value.Thirst * 20.0), 0, 20);
         }
 
-        foodScore = Math.Min(40, foodScore);
+        var foodScore = Math.Min(40, hungerScore + thirstPenalty);
 
         var weightScore = 0;
         var weight = TryExtractWeight(playerRow.Data);
@@ -1714,8 +1904,9 @@ public sealed class SessionSyncService
         var totalScore = Math.Min(100, injuryScore + exhaustionScore + moodleScore + foodScore + weightScore);
         var riskLevel = totalScore switch
         {
-            >= 70 => SessionRiskLevel.Critical,
-            >= 35 => SessionRiskLevel.Risky,
+            >= 80 => SessionRiskLevel.Critical,
+            >= 60 => SessionRiskLevel.Risky,
+            >= 40 => SessionRiskLevel.Caution,
             _ => SessionRiskLevel.Safe,
         };
 
@@ -1750,6 +1941,41 @@ public sealed class SessionSyncService
             notes.Add("No high-risk markers");
         }
 
+        var fatigueLevel = directStats?.Fatigue ?? Math.Clamp(exhaustionScore / 30.0, 0.0, 1.0);
+        var tirednessLevel = fatigueLevel;
+        var enduranceLevel = directStats?.Endurance ?? Math.Clamp(1.0 - fatigueLevel, 0.0, 1.0);
+        var hungerLevel = directStats?.Hunger ?? Math.Clamp(hungerScore / 30.0, 0.0, 1.0);
+        var thirstLevel = directStats?.Thirst ?? Math.Clamp(thirstPenalty / 20.0, 0.0, 1.0);
+        var painLevel = directStats?.Pain ?? Math.Clamp(injuryScore / 45.0, 0.0, 1.0);
+        var panicLevel = directStats?.Panic ?? (criticalMoodleMatches > 0
+            ? 0.85
+            : Math.Clamp(warningMoodleMatches * 0.2, 0.0, 1.0));
+        var stressLevel = directStats?.Stress
+            ?? Math.Clamp((warningMoodleMatches + criticalMoodleMatches) * 0.18, 0.0, 1.0);
+        var outOfBreathMatches = CountKeywordMatches(searchTokens, OutOfBreathKeywords);
+        var outOfBreathFromTokens = Math.Clamp(outOfBreathMatches * 0.28, 0.0, 1.0);
+        var outOfBreathMoodleLevel = ResolveEnduranceMoodleLevel(enduranceLevel);
+        var outOfBreathFromEndurance = outOfBreathMoodleLevel / 4.0;
+        var outOfBreathLevel = Math.Max(outOfBreathFromTokens, outOfBreathFromEndurance);
+        var queasyMatches = CountKeywordMatches(searchTokens, QueasyKeywords);
+        var queasyFromTokens = Math.Clamp(queasyMatches * 0.30, 0.0, 1.0);
+        var queasyFromStats = directStats is null
+            ? 0.0
+            : Math.Max(directStats.Value.Sickness, directStats.Value.FoodSickness);
+        var queasyLevel = Math.Max(queasyFromStats, queasyFromTokens);
+        var badSmellMatches = CountKeywordMatches(searchTokens, BadSmellKeywords);
+        var activeMoodles = BuildActiveMoodles(
+            hungerLevel,
+            thirstLevel,
+            fatigueLevel,
+            tirednessLevel,
+            painLevel,
+            outOfBreathLevel,
+            panicLevel,
+            stressLevel,
+            queasyLevel,
+            badSmellMatches > 0);
+
         return new SessionRiskAssessment(
             riskLevel,
             totalScore,
@@ -1758,7 +1984,115 @@ public sealed class SessionSyncService
             foodScore,
             moodleScore,
             weightScore,
-            string.Join("; ", notes));
+            string.Join("; ", notes),
+            fatigueLevel,
+            tirednessLevel,
+            enduranceLevel,
+            hungerLevel,
+            thirstLevel,
+            painLevel,
+            outOfBreathLevel,
+            queasyLevel,
+            panicLevel,
+            stressLevel,
+            activeMoodles);
+    }
+
+    private static IReadOnlyList<string> BuildActiveMoodles(
+        double hunger,
+        double thirst,
+        double fatigue,
+        double tiredness,
+        double pain,
+        double outOfBreath,
+        double panic,
+        double stress,
+        double queasy,
+        bool hasBadSmell)
+    {
+        var moodles = new List<string>();
+        AddMoodleByStages(moodles, "Hungry", hunger, 0.15, 0.25, 0.45, 0.70);
+        AddMoodleByStages(moodles, "Thirsty", thirst, 0.12, 0.25, 0.45, 0.70);
+        AddMoodleByStages(moodles, "Tired", Math.Max(fatigue, tiredness), 0.60, 0.70, 0.80, 0.90);
+        AddMoodleByStages(moodles, "Pain", pain, 0.10, 0.25, 0.50, 0.75);
+        AddMoodleByStages(moodles, "Out of Breath", outOfBreath, 0.20, 0.45, 0.70, 0.95);
+        AddMoodleByStages(moodles, "Panic", panic, 0.06, 0.25, 0.50, 0.75);
+        AddMoodleByStages(moodles, "Stress", stress, 0.25, 0.50, 0.75, 0.90);
+        AddMoodleByStages(moodles, "Queasy", queasy, 0.10, 0.25, 0.50, 0.75);
+        if (hasBadSmell)
+        {
+            moodles.Add("Bad Smell L1");
+        }
+
+        return moodles
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(12)
+            .ToArray();
+    }
+
+    private static void AddMoodleByStages(
+        ICollection<string> target,
+        string name,
+        double level,
+        double level1,
+        double level2,
+        double level3,
+        double level4)
+    {
+        var clamped = Math.Clamp(level, 0.0, 1.0);
+        var moodleLevel = 0;
+        if (clamped >= level1)
+        {
+            moodleLevel = 1;
+        }
+
+        if (clamped >= level2)
+        {
+            moodleLevel = 2;
+        }
+
+        if (clamped >= level3)
+        {
+            moodleLevel = 3;
+        }
+
+        if (clamped >= level4)
+        {
+            moodleLevel = 4;
+        }
+
+        if (moodleLevel <= 0)
+        {
+            return;
+        }
+
+        target.Add($"{name} L{moodleLevel}");
+    }
+
+    private static int ResolveEnduranceMoodleLevel(double endurance)
+    {
+        var value = Math.Clamp(endurance, 0.0, 1.0);
+        if (value <= 0.10)
+        {
+            return 4;
+        }
+
+        if (value <= 0.25)
+        {
+            return 3;
+        }
+
+        if (value <= 0.50)
+        {
+            return 2;
+        }
+
+        if (value <= 0.75)
+        {
+            return 1;
+        }
+
+        return 0;
     }
 
     private static int CountKeywordMatches(IReadOnlyCollection<string> searchTokens, IReadOnlyCollection<string> keywords)
@@ -1791,6 +2125,670 @@ public sealed class SessionSyncService
             keywords.Any(keyword => token.Contains(keyword, StringComparison.OrdinalIgnoreCase)));
     }
 
+    private static int? TryExtractZombieKills(byte[] data)
+    {
+        if (data.Length == 0)
+        {
+            return null;
+        }
+
+        var fromKillCountMap = TryExtractZombieKillsFromKillCountMap(data);
+        if (fromKillCountMap.HasValue)
+        {
+            return fromKillCountMap.Value;
+        }
+
+        var fromText = TryExtractZombieKillsFromText(data);
+        if (fromText.HasValue)
+        {
+            return fromText.Value;
+        }
+
+        return TryExtractZombieKillsFromBinary(data);
+    }
+
+    private static int? TryExtractZombieKillsFromKillCountMap(byte[] data)
+    {
+        if (data.Length == 0)
+        {
+            return null;
+        }
+
+        var latin = Encoding.Latin1.GetString(data);
+        var killCountPositions = FindTokenPositions(latin, "KillCount");
+        if (killCountPositions.Count == 0)
+        {
+            return null;
+        }
+
+        var sum = 0;
+        var matchedAny = false;
+
+        for (var i = 0; i <= data.Length - 5; i++)
+        {
+            if (!IsTokenAt(data, i, "count"))
+            {
+                continue;
+            }
+
+            var nearestKillCountDistance = killCountPositions
+                .Select(position => i - position)
+                .Where(distance => distance >= 0)
+                .DefaultIfEmpty(int.MaxValue)
+                .Min();
+
+            if (nearestKillCountDistance is < 0 or > 4096)
+            {
+                continue;
+            }
+
+            if (!TryReadCountValue(data, i + 5, out var value))
+            {
+                continue;
+            }
+
+            if (value <= 0)
+            {
+                continue;
+            }
+
+            sum += value;
+            matchedAny = true;
+        }
+
+        if (!matchedAny)
+        {
+            return null;
+        }
+
+        return Math.Max(0, sum);
+    }
+
+    private static int? TryExtractZombieKillsFromGlobalModData(string savePath, string? playerName)
+    {
+        if (string.IsNullOrWhiteSpace(savePath))
+        {
+            return null;
+        }
+
+        var modDataPath = Path.Combine(savePath, "global_mod_data.bin");
+        if (!File.Exists(modDataPath))
+        {
+            return null;
+        }
+
+        byte[] data;
+        try
+        {
+            data = File.ReadAllBytes(modDataPath);
+        }
+        catch
+        {
+            return null;
+        }
+
+        if (data.Length == 0)
+        {
+            return null;
+        }
+
+        var latin = Encoding.Latin1.GetString(data);
+        var killCountPositions = FindTokenPositions(latin, "KillCount");
+        if (killCountPositions.Count == 0)
+        {
+            return null;
+        }
+
+        var normalizedPlayerName = Normalize(playerName ?? string.Empty);
+        var sum = 0;
+        var matchedAny = false;
+
+        for (var i = 0; i <= data.Length - 5; i++)
+        {
+            if (!IsTokenAt(data, i, "count"))
+            {
+                continue;
+            }
+
+            var nearestKillCountDistance = killCountPositions
+                .Select(position => i - position)
+                .Where(distance => distance >= 0)
+                .DefaultIfEmpty(int.MaxValue)
+                .Min();
+
+            if (nearestKillCountDistance is < 0 or > 2048)
+            {
+                continue;
+            }
+
+            if (!TryReadCountValue(data, i + 5, out var value))
+            {
+                continue;
+            }
+
+            if (!IsCountLikelyForCurrentPlayer(data, i, normalizedPlayerName))
+            {
+                continue;
+            }
+
+            sum += value;
+            matchedAny = true;
+        }
+
+        if (!matchedAny)
+        {
+            return null;
+        }
+
+        return Math.Max(0, sum);
+    }
+
+    private static int? ResolveZombieKills(int? fromGlobalModData, int? fromPlayerData)
+    {
+        if (fromGlobalModData.HasValue && fromPlayerData.HasValue)
+        {
+            return Math.Max(fromGlobalModData.Value, fromPlayerData.Value);
+        }
+
+        if (fromGlobalModData.HasValue)
+        {
+            return fromGlobalModData.Value;
+        }
+
+        if (fromPlayerData.HasValue)
+        {
+            return fromPlayerData.Value;
+        }
+
+        return null;
+    }
+
+    private static int? TryExtractZombieKillsFromText(byte[] data)
+    {
+        var text = Encoding.UTF8.GetString(data).Replace('\0', ' ');
+        var match = ZombieKillsRegex.Match(text);
+        if (!match.Success)
+        {
+            return null;
+        }
+
+        return int.TryParse(match.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var kills)
+            ? Math.Max(0, kills)
+            : null;
+    }
+
+    private static int? TryExtractZombieKillsFromBinary(byte[] data)
+    {
+        var latinLower = Encoding.Latin1.GetString(data).ToLowerInvariant();
+        var candidates = new List<(int Value, int Score)>();
+
+        foreach (var keyword in ZombieKillsKeywords)
+        {
+            var searchIndex = 0;
+            while (searchIndex < latinLower.Length)
+            {
+                var keywordIndex = latinLower.IndexOf(keyword, searchIndex, StringComparison.Ordinal);
+                if (keywordIndex < 0)
+                {
+                    break;
+                }
+
+                var keyEnd = keywordIndex + keyword.Length;
+                var windowEnd = Math.Min(data.Length - 4, keyEnd + 64);
+                for (var i = keyEnd; i <= windowEnd; i++)
+                {
+                    var be = ReadInt32BigEndian(data, i);
+                    AddZombieKillCandidate(candidates, be, i - keyEnd);
+                }
+
+                for (var i = keyEnd + 1; i <= windowEnd; i++)
+                {
+                    var le = BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(i, 4));
+                    AddZombieKillCandidate(candidates, le, i - keyEnd + 8);
+                }
+
+                var windowEnd16 = Math.Min(data.Length - 2, keyEnd + 32);
+                for (var i = keyEnd + 1; i <= windowEnd16; i++)
+                {
+                    var be16 = ReadUInt16BigEndian(data, i);
+                    AddZombieKillCandidate(candidates, be16, i - keyEnd + 14);
+                }
+
+                searchIndex = keywordIndex + keyword.Length;
+            }
+        }
+
+        if (candidates.Count == 0)
+        {
+            return null;
+        }
+
+        var best = candidates
+            .OrderBy(candidate => candidate.Score)
+            .ThenByDescending(candidate => candidate.Value)
+            .First();
+        return best.Value;
+    }
+
+    private static void AddZombieKillCandidate(ICollection<(int Value, int Score)> candidates, int value, int offset)
+    {
+        if (value is < 0 or > 2_000_000)
+        {
+            return;
+        }
+
+        var score = offset;
+        if (value == 0)
+        {
+            score += 20;
+        }
+        else if (value > 200_000)
+        {
+            score += 10;
+        }
+
+        candidates.Add((value, score));
+    }
+
+    private static bool IsTokenAt(byte[] data, int index, string token)
+    {
+        if (index < 0 || index + token.Length > data.Length)
+        {
+            return false;
+        }
+
+        for (var i = 0; i < token.Length; i++)
+        {
+            var a = char.ToLowerInvariant((char)data[index + i]);
+            var b = char.ToLowerInvariant(token[i]);
+            if (a != b)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static List<int> FindTokenPositions(string text, string token)
+    {
+        var positions = new List<int>();
+        var index = 0;
+        while (index < text.Length)
+        {
+            index = text.IndexOf(token, index, StringComparison.OrdinalIgnoreCase);
+            if (index < 0)
+            {
+                break;
+            }
+
+            positions.Add(index);
+            index += token.Length;
+        }
+
+        return positions;
+    }
+
+    private static bool TryReadCountValue(byte[] data, int startIndex, out int value)
+    {
+        value = 0;
+        int? bestValue = null;
+        var maxStart = Math.Min(data.Length - 9, startIndex + 24);
+        for (var i = startIndex; i <= maxStart; i++)
+        {
+            if (data[i] != 0x01)
+            {
+                continue;
+            }
+
+            var bits = BinaryPrimitives.ReadInt64BigEndian(data.AsSpan(i + 1, 8));
+            var doubleValue = BitConverter.Int64BitsToDouble(bits);
+            if (double.IsNaN(doubleValue) || double.IsInfinity(doubleValue))
+            {
+                continue;
+            }
+
+            if (doubleValue is < 0 or > 2_000_000)
+            {
+                continue;
+            }
+
+            var rounded = Math.Round(doubleValue);
+            if (Math.Abs(doubleValue - rounded) > 0.000001)
+            {
+                continue;
+            }
+
+            var candidate = (int)rounded;
+            if (!bestValue.HasValue || candidate > bestValue.Value)
+            {
+                bestValue = candidate;
+            }
+        }
+
+        if (bestValue.HasValue)
+        {
+            value = bestValue.Value;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool IsCountLikelyForCurrentPlayer(byte[] data, int countIndex, string normalizedPlayerName)
+    {
+        if (string.IsNullOrWhiteSpace(normalizedPlayerName))
+        {
+            return true;
+        }
+
+        var windowStart = Math.Max(0, countIndex - 256);
+        var windowLength = countIndex - windowStart;
+        if (windowLength <= 0)
+        {
+            return false;
+        }
+
+        var windowText = Encoding.Latin1.GetString(data, windowStart, windowLength);
+        var normalizedWindow = Normalize(windowText);
+        return normalizedWindow.Contains(normalizedPlayerName, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static double? TryExtractInGameSurvivedHours(string savePath)
+    {
+        if (!TryReadCurrentInGameDateTime(savePath, out var currentInGameTime))
+        {
+            return null;
+        }
+
+        if (!TryReadWorldStartInGameDateTime(savePath, out var worldStartInGameTime))
+        {
+            return null;
+        }
+
+        var survived = currentInGameTime - worldStartInGameTime;
+        if (survived < TimeSpan.Zero)
+        {
+            return 0.0;
+        }
+
+        return survived.TotalHours;
+    }
+
+    private static double? TryConvertInGameHoursToRealPlayedHours(string savePath, double? inGameSurvivedHours)
+    {
+        if (!inGameSurvivedHours.HasValue || inGameSurvivedHours.Value < 0.0)
+        {
+            return null;
+        }
+
+        if (!TryReadRealMinutesPerInGameDay(savePath, out var realMinutesPerDay))
+        {
+            return null;
+        }
+
+        var realHours = inGameSurvivedHours.Value * (realMinutesPerDay / 1440.0);
+        return Math.Max(0.0, realHours);
+    }
+
+    private static bool TryReadRealMinutesPerInGameDay(string savePath, out double value)
+    {
+        value = 60.0;
+        if (string.IsNullOrWhiteSpace(savePath))
+        {
+            return false;
+        }
+
+        var sandboxPath = Path.Combine(savePath, "map_sand.bin");
+        if (!File.Exists(sandboxPath))
+        {
+            return false;
+        }
+
+        byte[] data;
+        try
+        {
+            data = File.ReadAllBytes(sandboxPath);
+        }
+        catch
+        {
+            return false;
+        }
+
+        if (!TryReadSandboxIntOption(data, "DayLength", out var dayLengthOption))
+        {
+            value = 60.0;
+            return true;
+        }
+
+        value = ResolveDayLengthRealMinutes(dayLengthOption);
+        return value > 0.0;
+    }
+
+    private static bool TryReadCurrentInGameDateTime(string savePath, out DateTime value)
+    {
+        value = default;
+        if (string.IsNullOrWhiteSpace(savePath))
+        {
+            return false;
+        }
+
+        var gameTimePath = Path.Combine(savePath, "map_t.bin");
+        if (!File.Exists(gameTimePath))
+        {
+            return false;
+        }
+
+        byte[] data;
+        try
+        {
+            data = File.ReadAllBytes(gameTimePath);
+        }
+        catch
+        {
+            return false;
+        }
+
+        if (data.Length < 40)
+        {
+            return false;
+        }
+
+        var dayZeroBased = ReadInt32BigEndian(data, 28);
+        var day = dayZeroBased + 1;
+        var monthZeroBased = ReadInt32BigEndian(data, 32);
+        var year = ReadInt32BigEndian(data, 36);
+        var timeOfDay = ReadSingleBigEndian(data, 20);
+
+        if (year < 1900 || year > 2500)
+        {
+            return false;
+        }
+
+        var month = monthZeroBased + 1;
+        if (month < 1 || month > 12)
+        {
+            return false;
+        }
+
+        var maxDay = DateTime.DaysInMonth(year, month);
+        if (day < 1 || day > maxDay)
+        {
+            return false;
+        }
+
+        if (double.IsNaN(timeOfDay) || double.IsInfinity(timeOfDay) || timeOfDay < 0 || timeOfDay > 48)
+        {
+            return false;
+        }
+
+        var baseDate = new DateTime(year, month, day, 0, 0, 0, DateTimeKind.Unspecified);
+        value = baseDate.AddHours(timeOfDay);
+        return true;
+    }
+
+    private static bool TryReadWorldStartInGameDateTime(string savePath, out DateTime value)
+    {
+        value = default;
+        if (string.IsNullOrWhiteSpace(savePath))
+        {
+            return false;
+        }
+
+        var sandboxPath = Path.Combine(savePath, "map_sand.bin");
+        if (!File.Exists(sandboxPath))
+        {
+            return false;
+        }
+
+        byte[] data;
+        try
+        {
+            data = File.ReadAllBytes(sandboxPath);
+        }
+        catch
+        {
+            return false;
+        }
+
+        if (!TryReadSandboxIntOption(data, "StartYear", out var startYearOption) ||
+            !TryReadSandboxIntOption(data, "StartMonth", out var startMonthOption) ||
+            !TryReadSandboxIntOption(data, "StartDay", out var startDayOption) ||
+            !TryReadSandboxIntOption(data, "StartTime", out var startTimeOption))
+        {
+            return false;
+        }
+
+        TryReadSandboxIntOption(data, "TimeSinceApo", out var timeSinceApoOption);
+
+        var year = 1992 + startYearOption;
+        var month = Math.Clamp(startMonthOption, 1, 12);
+        var maxDay = DateTime.DaysInMonth(year, month);
+        var day = Math.Clamp(startDayOption, 1, maxDay);
+        var hour = ResolveStartHour(startTimeOption);
+        var monthsAfterApocalypse = ResolveTimeSinceApoMonths(timeSinceApoOption);
+
+        var start = new DateTime(year, month, day, 0, 0, 0, DateTimeKind.Unspecified)
+            .AddMonths(monthsAfterApocalypse)
+            .AddHours(hour);
+
+        value = start;
+        return true;
+    }
+
+    private static bool TryReadSandboxIntOption(byte[] data, string key, out int value)
+    {
+        value = 0;
+        if (!TryReadSandboxRawOption(data, key, out var raw))
+        {
+            return false;
+        }
+
+        return int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
+    }
+
+    private static bool TryReadSandboxRawOption(byte[] data, string key, out string value)
+    {
+        value = string.Empty;
+        if (data.Length == 0 || string.IsNullOrWhiteSpace(key))
+        {
+            return false;
+        }
+
+        var keyBytes = Encoding.ASCII.GetBytes(key);
+        for (var i = 0; i <= data.Length - keyBytes.Length - 3; i++)
+        {
+            var matches = true;
+            for (var j = 0; j < keyBytes.Length; j++)
+            {
+                if (data[i + j] != keyBytes[j])
+                {
+                    matches = false;
+                    break;
+                }
+            }
+
+            if (!matches)
+            {
+                continue;
+            }
+
+            var keyEnd = i + keyBytes.Length;
+            if (data[keyEnd] != 0)
+            {
+                continue;
+            }
+
+            var length = data[keyEnd + 1];
+            if (length <= 0)
+            {
+                continue;
+            }
+
+            var valueStart = keyEnd + 2;
+            var valueEnd = valueStart + length;
+            if (valueEnd >= data.Length || data[valueEnd] != 0)
+            {
+                continue;
+            }
+
+            value = Encoding.ASCII.GetString(data, valueStart, length).Trim();
+            return value.Length > 0;
+        }
+
+        return false;
+    }
+
+    private static int ResolveStartHour(int startTimeOption)
+    {
+        return startTimeOption switch
+        {
+            1 => 7,
+            2 => 9,
+            3 => 12,
+            4 => 14,
+            5 => 17,
+            6 => 21,
+            7 => 0,
+            8 => 2,
+            9 => 5,
+            _ => 9,
+        };
+    }
+
+    private static int ResolveTimeSinceApoMonths(int timeSinceApoOption)
+    {
+        return timeSinceApoOption switch
+        {
+            <= 1 => 0,
+            2 => 1,
+            3 => 2,
+            4 => 3,
+            5 => 6,
+            6 => 12,
+            7 => 24,
+            8 => 60,
+            _ => 120,
+        };
+    }
+
+    private static double ResolveDayLengthRealMinutes(int dayLengthOption)
+    {
+        return dayLengthOption switch
+        {
+            1 => 15.0,
+            2 => 30.0,
+            3 => 60.0,
+            4 => 120.0,
+            5 => 180.0,
+            6 => 240.0,
+            7 => 300.0,
+            8 => 720.0,
+            9 => 1440.0,
+            _ => 60.0,
+        };
+    }
+
     private static double? TryExtractWeight(byte[] data)
     {
         if (data.Length == 0)
@@ -1814,6 +2812,105 @@ public sealed class SessionSyncService
         return weight is < 30 or > 250 ? null : weight;
     }
 
+    private static bool TryExtractCharacterStats(byte[] data, out CharacterStatsSnapshot stats)
+    {
+        stats = default;
+        if (data.Length < CharacterStatsBlockLength)
+        {
+            return false;
+        }
+
+        var found = false;
+        var bestScore = double.MinValue;
+
+        for (var offset = 0; offset <= data.Length - CharacterStatsBlockLength; offset++)
+        {
+            if (!TryReadCharacterStatsAt(data, offset, out var candidateStats, out var score))
+            {
+                continue;
+            }
+
+            if (!found || score > bestScore)
+            {
+                found = true;
+                bestScore = score;
+                stats = candidateStats;
+            }
+        }
+
+        return found;
+    }
+
+    private static bool TryReadCharacterStatsAt(
+        byte[] data,
+        int offset,
+        out CharacterStatsSnapshot stats,
+        out double score)
+    {
+        stats = default;
+        score = 0.0;
+        if (offset < 0 || offset + CharacterStatsBlockLength > data.Length)
+        {
+            return false;
+        }
+
+        Span<double> values = stackalloc double[CharacterStatsCount];
+        for (var index = 0; index < CharacterStatsCount; index++)
+        {
+            var value = ReadSingleBigEndian(data, offset + index * 4);
+            if (float.IsNaN(value) || float.IsInfinity(value))
+            {
+                return false;
+            }
+
+            var min = CharacterStatMinimums[index];
+            var max = CharacterStatMaximums[index];
+            if (value < min - 0.05 || value > max + 0.05)
+            {
+                return false;
+            }
+
+            var clamped = Math.Clamp((double)value, min, max);
+            values[index] = clamped;
+
+            var range = Math.Max(0.0001, max - min);
+            var distance = Math.Abs(clamped - CharacterStatDefaults[index]) / range;
+            score += Math.Max(0.0, 1.0 - distance);
+        }
+
+        var temperature = values[CharacterStatIndexTemperature];
+        if (temperature is < 33.0 or > 40.0)
+        {
+            return false;
+        }
+
+        if (values[CharacterStatIndexMorale] is < 0.35 or > 1.0)
+        {
+            return false;
+        }
+
+        if (values[CharacterStatIndexSanity] is < 0.35 or > 1.0)
+        {
+            return false;
+        }
+
+        score += Math.Max(0.0, 5.0 - Math.Abs(temperature - 37.0));
+
+        stats = new CharacterStatsSnapshot(
+            Endurance: Math.Clamp(values[CharacterStatIndexEndurance], 0.0, 1.0),
+            Fatigue: Math.Clamp(values[CharacterStatIndexFatigue], 0.0, 1.0),
+            Hunger: Math.Clamp(values[CharacterStatIndexHunger], 0.0, 1.0),
+            Thirst: Math.Clamp(values[CharacterStatIndexThirst], 0.0, 1.0),
+            Panic: Math.Clamp(values[CharacterStatIndexPanic] / 100.0, 0.0, 1.0),
+            Stress: Math.Clamp(values[CharacterStatIndexStress], 0.0, 1.0),
+            Pain: Math.Clamp(values[CharacterStatIndexPain] / 100.0, 0.0, 1.0),
+            Sickness: Math.Clamp(values[CharacterStatIndexSickness], 0.0, 1.0),
+            FoodSickness: Math.Clamp(values[CharacterStatIndexFoodSickness] / 100.0, 0.0, 1.0),
+            ZombieFever: Math.Clamp(values[CharacterStatIndexZombieFever] / 100.0, 0.0, 1.0),
+            ZombieInfection: Math.Clamp(values[CharacterStatIndexZombieInfection] / 100.0, 0.0, 1.0));
+        return true;
+    }
+
     private static int ReadUInt16BigEndian(byte[] data, int position)
     {
         return (data[position] << 8) | data[position + 1];
@@ -1825,6 +2922,12 @@ public sealed class SessionSyncService
                (data[position + 1] << 16) |
                (data[position + 2] << 8) |
                data[position + 3];
+    }
+
+    private static float ReadSingleBigEndian(byte[] data, int position)
+    {
+        var bits = ReadInt32BigEndian(data, position);
+        return BitConverter.Int32BitsToSingle(bits);
     }
 
     private static string Normalize(string value)
@@ -1896,7 +2999,18 @@ public sealed class SessionSyncService
         int FoodScore,
         int MoodleScore,
         int WeightScore,
-        string Note)
+        string Note,
+        double Fatigue,
+        double Tiredness,
+        double Endurance,
+        double Hunger,
+        double Thirst,
+        double Pain,
+        double OutOfBreath,
+        double Queasy,
+        double Panic,
+        double Stress,
+        IReadOnlyList<string> ActiveMoodles)
     {
         public static SessionRiskAssessment None { get; } = new(
             SessionRiskLevel.Unknown,
@@ -1906,6 +3020,30 @@ public sealed class SessionSyncService
             0,
             0,
             0,
-            string.Empty);
+            string.Empty,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            []);
     }
+
+    private readonly record struct CharacterStatsSnapshot(
+        double Endurance,
+        double Fatigue,
+        double Hunger,
+        double Thirst,
+        double Panic,
+        double Stress,
+        double Pain,
+        double Sickness,
+        double FoodSickness,
+        double ZombieFever,
+        double ZombieInfection);
 }

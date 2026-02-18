@@ -25,7 +25,8 @@ public partial class MainWindowViewModel : ViewModelBase
     private const string DefaultGitHubUpdateRepository = "https://github.com/mZe184/ZomboidGuide";
     private static readonly IBrush RiskUnknownBrush = Brush.Parse("#4C5840");
     private static readonly IBrush RiskSafeBrush = Brush.Parse("#2F5A3E");
-    private static readonly IBrush RiskRiskyBrush = Brush.Parse("#7A5A2E");
+    private static readonly IBrush RiskCautionBrush = Brush.Parse("#6E6A2B");
+    private static readonly IBrush RiskRiskyBrush = Brush.Parse("#9A5B2A");
     private static readonly IBrush RiskCriticalBrush = Brush.Parse("#7A2E2E");
 
     private readonly AppStateService _appStateService = new();
@@ -33,6 +34,13 @@ public partial class MainWindowViewModel : ViewModelBase
     private readonly SessionSyncService _sessionSyncService = new();
     private readonly AppUpdateService _appUpdateService = new();
     private readonly UiLocalizationService _uiLocalizationService = new();
+    private readonly LiveStateStore _liveStateStore = LiveStateStore.Instance;
+    private readonly StatsEngine _statsEngine = new();
+    private readonly SleepOptimizer _sleepOptimizer = new();
+    private readonly TodoEngine _todoEngine = new();
+    private readonly TodoStateStore _todoStateStore = new();
+    private readonly OverlayStateProvider _overlayStateProvider;
+    private readonly LocalHttpServer _localOverlayServer;
 
     private readonly DispatcherTimer _sessionTimer = new() { Interval = TimeSpan.FromMinutes(2) };
     private readonly DispatcherTimer _sessionWatcherDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(900) };
@@ -61,6 +69,9 @@ public partial class MainWindowViewModel : ViewModelBase
     private bool _sessionWatcherDirty;
     private string _watchedSavePath = string.Empty;
     private DateTime _lastObservedPlayersDbWriteUtc = DateTime.MinValue;
+    private DateTime _lastObservedGlobalModDataWriteUtc = DateTime.MinValue;
+    private DateTime _lastObservedMapTimeWriteUtc = DateTime.MinValue;
+    private DateTimeOffset _lastLiveTelemetrySyncAt = DateTimeOffset.MinValue;
 
     [ObservableProperty]
     private ObservableCollection<BookCategoryGroupViewModel> filteredBookGroups = [];
@@ -231,7 +242,8 @@ public partial class MainWindowViewModel : ViewModelBase
     public string RiskLevelText => RiskLevel switch
     {
         SessionRiskLevel.Safe => L("Safe", "Sicher"),
-        SessionRiskLevel.Risky => L("Risky", "Riskant"),
+        SessionRiskLevel.Caution => L("Caution", "Unsicher"),
+        SessionRiskLevel.Risky => L("Risky", "Gefährlich"),
         SessionRiskLevel.Critical => L("Critical", "Kritisch"),
         _ => L("Unknown", "Unbekannt"),
     };
@@ -245,7 +257,8 @@ public partial class MainWindowViewModel : ViewModelBase
             var guidance = RiskLevel switch
             {
                 SessionRiskLevel.Safe => L("Stable for now. Keep food, water, and rest up.", "Aktuell stabil. Nahrung, Wasser und Ruhe beibehalten."),
-                SessionRiskLevel.Risky => L("Warning: eat, drink, and rest soon.", "Warnung: bald essen, trinken und ausruhen."),
+                SessionRiskLevel.Caution => L("Slightly unsafe: monitor moodles and prepare a fallback route.", "Etwas unsicher: Moodles beobachten und Rückzugsroute vorbereiten."),
+                SessionRiskLevel.Risky => L("Dangerous: stabilize now (food, water, rest, wounds).", "Gefährlich: jetzt stabilisieren (Nahrung, Wasser, Ruhe, Wunden)."),
                 SessionRiskLevel.Critical => L("Critical: sleep, eat, and treat wounds now.", "Kritisch: jetzt schlafen, essen und Wunden behandeln."),
                 _ => L("No fresh session risk data yet.", "Noch keine frischen Session-Risikodaten."),
             };
@@ -259,6 +272,7 @@ public partial class MainWindowViewModel : ViewModelBase
     public IBrush RiskBadgeBrush => RiskLevel switch
     {
         SessionRiskLevel.Safe => RiskSafeBrush,
+        SessionRiskLevel.Caution => RiskCautionBrush,
         SessionRiskLevel.Risky => RiskRiskyBrush,
         SessionRiskLevel.Critical => RiskCriticalBrush,
         _ => RiskUnknownBrush,
@@ -318,8 +332,51 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public string RecipeFilterLabelText => L("Recipes Filter", "Rezepte-Filter");
 
+    public string CompanionTabHeaderText => L("Companion", "Companion");
+
+    public string CompanionSurvivalTabText => L("Survival", "Survival");
+
+    public string CompanionSleepTabText => L("Sleep", "Schlaf");
+
+    public string CompanionIntelligentTodoTabText => L("Intelligent To-Do", "Intelligentes To-Do");
+
+    public string CompanionRunsTabText => L("Runs", "Runs");
+
+    public string CompanionOverlayTabText => L("Overlay", "Overlay");
+
+    public CompanionSurvivalViewModel CompanionSurvivalPage { get; }
+
+    public CompanionSleepViewModel CompanionSleepPage { get; }
+
+    public CompanionIntelligentTodoViewModel CompanionIntelligentTodoPage { get; }
+
+    public CompanionRunsViewModel CompanionRunsPage { get; }
+
+    public CompanionOverlayViewModel CompanionOverlayPage { get; }
+
     public MainWindowViewModel()
     {
+        _overlayStateProvider = new OverlayStateProvider(
+            _liveStateStore,
+            _statsEngine,
+            _sleepOptimizer,
+            _todoEngine,
+            _uiLocalizationService,
+            () => _state.LanguageCode ?? string.Empty);
+        _localOverlayServer = new LocalHttpServer(_overlayStateProvider, () => _state.GamePath ?? string.Empty);
+
+        CompanionSurvivalPage = new CompanionSurvivalViewModel(_liveStateStore, _statsEngine, () => _state.GamePath ?? string.Empty);
+        CompanionSleepPage = new CompanionSleepViewModel(_liveStateStore, _sleepOptimizer);
+        CompanionIntelligentTodoPage = new CompanionIntelligentTodoViewModel(
+            _liveStateStore,
+            _statsEngine,
+            _sleepOptimizer,
+            _todoEngine,
+            _todoStateStore);
+        CompanionRunsPage = new CompanionRunsViewModel();
+        CompanionOverlayPage = new CompanionOverlayViewModel(_localOverlayServer);
+        CompanionOverlayPage.OverlaySettingsChanged += OnOverlaySettingsChanged;
+
         ApplyInitialUiTextDefaults();
         UpdateSessionPollingInterval();
         _sessionTimer.Tick += SessionTimerOnTick;
@@ -674,6 +731,7 @@ public partial class MainWindowViewModel : ViewModelBase
         UpdateStatusMessage = L(
             "Update installation started. Restarting app ...",
             "Update-Installation gestartet. App wird neu gestartet ...");
+        OnApplicationExit();
         if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktopLifetime)
         {
             desktopLifetime.Shutdown();
@@ -681,6 +739,20 @@ public partial class MainWindowViewModel : ViewModelBase
         }
 
         Environment.Exit(0);
+    }
+
+    public void OnApplicationExit()
+    {
+        CompanionOverlayPage.StopServer();
+        LocalHttpServer.StopAllInstances();
+        CompanionOverlayPage.OverlaySettingsChanged -= OnOverlaySettingsChanged;
+    }
+
+    private void OnOverlaySettingsChanged(int port, bool autoStart)
+    {
+        _state.OverlayPort = NormalizeOverlayPort(port);
+        _state.OverlayAutoStart = autoStart;
+        _ = SaveStateAsync();
     }
 
     [RelayCommand]
@@ -754,6 +826,8 @@ public partial class MainWindowViewModel : ViewModelBase
             _state.RecipeStatusFilterKey = string.IsNullOrWhiteSpace(_state.RecipeStatusFilterKey)
                 ? "all"
                 : _state.RecipeStatusFilterKey.ToLowerInvariant();
+            _state.OverlayPort = NormalizeOverlayPort(_state.OverlayPort);
+            CompanionOverlayPage.ApplySettings(_state.OverlayPort, _state.OverlayAutoStart);
             ApplyUiLanguage();
             UpdateReleaseVersionText();
 
@@ -860,7 +934,7 @@ public partial class MainWindowViewModel : ViewModelBase
                 StatusMessage = L("Reading active session ...", "Lese aktive Session ...");
             }
 
-            var result = await Task.Run(() => _sessionSyncService.SyncFromCurrentSession(_catalogItems, includeRiskAssessment: RiskIndicatorEnabled));
+            var result = await Task.Run(() => _sessionSyncService.SyncFromCurrentSession(_catalogItems, includeRiskAssessment: true));
             if (!result.Success)
             {
                 if (RiskIndicatorEnabled)
@@ -892,13 +966,22 @@ public partial class MainWindowViewModel : ViewModelBase
             ApplySessionSkills(result.SkillLevels);
             RefreshTodoAutoStates();
             _lastObservedPlayersDbWriteUtc = ResolvePlayersDbLastWriteUtc(result.SavePath);
+            _lastObservedGlobalModDataWriteUtc = ResolveGlobalModDataLastWriteUtc(result.SavePath);
+            _lastObservedMapTimeWriteUtc = ResolveMapTimeLastWriteUtc(result.SavePath);
 
             _state.LastSessionSyncAt = DateTimeOffset.Now;
             LastSessionSyncText = Lf(
                 "Last session sync: {0:dd.MM.yyyy HH:mm}",
                 "Letzte Session-Sync: {0:dd.MM.yyyy HH:mm}",
                 _state.LastSessionSyncAt);
-            await SaveStateAsync();
+            var shouldPersistSyncState = isManual || AutoSessionSync || RiskIndicatorEnabled;
+            if (shouldPersistSyncState)
+            {
+                await SaveStateAsync();
+            }
+
+            _liveStateStore.Update(BuildGameSnapshot(result));
+            _lastLiveTelemetrySyncAt = DateTimeOffset.UtcNow;
 
             if (RiskIndicatorEnabled)
             {
@@ -909,9 +992,12 @@ public partial class MainWindowViewModel : ViewModelBase
                 ResetRiskIndicator();
             }
 
-            StatusMessage = L(
-                $"Session synced successfully ({result.PlayerName})",
-                $"Session erfolgreich synchronisiert ({result.PlayerName})");
+            if (isManual)
+            {
+                StatusMessage = L(
+                    $"Session synced successfully ({result.PlayerName})",
+                    $"Session erfolgreich synchronisiert ({result.PlayerName})");
+            }
         }
         finally
         {
@@ -1997,7 +2083,7 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         _sessionTimer.Interval = RiskIndicatorEnabled
             ? TimeSpan.FromSeconds(1)
-            : TimeSpan.FromMinutes(2);
+            : TimeSpan.FromSeconds(2);
     }
 
     private static DateTime ResolvePlayersDbLastWriteUtc(string? savePath)
@@ -2013,16 +2099,58 @@ public partial class MainWindowViewModel : ViewModelBase
             : DateTime.MinValue;
     }
 
-    private bool HasPlayersDbChangedSinceLastSync()
+    private static DateTime ResolveGlobalModDataLastWriteUtc(string? savePath)
     {
-        var savePath = _sessionSyncService.TryResolveActiveSavePathForCurrentSession();
-        var writeUtc = ResolvePlayersDbLastWriteUtc(savePath);
-        if (writeUtc == DateTime.MinValue)
+        if (string.IsNullOrWhiteSpace(savePath))
         {
-            return false;
+            return DateTime.MinValue;
         }
 
-        return writeUtc > _lastObservedPlayersDbWriteUtc;
+        var modDataPath = Path.Combine(savePath, "global_mod_data.bin");
+        return File.Exists(modDataPath)
+            ? File.GetLastWriteTimeUtc(modDataPath)
+            : DateTime.MinValue;
+    }
+
+    private static DateTime ResolveMapTimeLastWriteUtc(string? savePath)
+    {
+        if (string.IsNullOrWhiteSpace(savePath))
+        {
+            return DateTime.MinValue;
+        }
+
+        var mapTimePath = Path.Combine(savePath, "map_t.bin");
+        return File.Exists(mapTimePath)
+            ? File.GetLastWriteTimeUtc(mapTimePath)
+            : DateTime.MinValue;
+    }
+
+    private bool HasSessionDataChangedSinceLastSync()
+    {
+        var savePath = _sessionSyncService.TryResolveActiveSavePathForCurrentSession();
+        var playersWriteUtc = ResolvePlayersDbLastWriteUtc(savePath);
+        var modDataWriteUtc = ResolveGlobalModDataLastWriteUtc(savePath);
+        var mapTimeWriteUtc = ResolveMapTimeLastWriteUtc(savePath);
+
+        if (playersWriteUtc != DateTime.MinValue &&
+            playersWriteUtc > _lastObservedPlayersDbWriteUtc)
+        {
+            return true;
+        }
+
+        if (modDataWriteUtc != DateTime.MinValue &&
+            modDataWriteUtc > _lastObservedGlobalModDataWriteUtc)
+        {
+            return true;
+        }
+
+        if (mapTimeWriteUtc != DateTime.MinValue &&
+            mapTimeWriteUtc > _lastObservedMapTimeWriteUtc)
+        {
+            return true;
+        }
+
+        return false;
     }
 
     private void ApplyRiskIndicator(SessionSyncResult result)
@@ -2030,6 +2158,74 @@ public partial class MainWindowViewModel : ViewModelBase
         RiskLevel = result.RiskLevel;
         RiskScore = result.RiskScore;
         RiskNotes = BuildLocalizedRiskNotes(result);
+    }
+
+    private GameSnapshot BuildGameSnapshot(SessionSyncResult result)
+    {
+        var issues = new List<string>();
+        if (result.InjuryRiskScore >= 20)
+        {
+            issues.Add("Injuries");
+        }
+
+        if (result.MoodleRiskScore >= 18)
+        {
+            issues.Add("Bad moodles");
+        }
+
+        if (result.ExhaustionRiskScore >= 15)
+        {
+            issues.Add("Exhaustion");
+        }
+
+        if (result.FoodRiskScore >= 20)
+        {
+            issues.Add("Low food or water");
+        }
+
+        if (result.WeightRiskScore >= 10)
+        {
+            issues.Add("Weight warning");
+        }
+
+        if (result.PainLevel >= 0.45)
+        {
+            issues.Add("Pain");
+        }
+
+        if (result.OutOfBreathLevel >= 0.35)
+        {
+            issues.Add("Out of breath");
+        }
+
+        if (result.QueasyLevel >= 0.30)
+        {
+            issues.Add("Queasy");
+        }
+
+        return new GameSnapshot
+        {
+            TimestampUtc = DateTimeOffset.UtcNow,
+            ZombieKillsTotal = result.ZombieKillsTotal,
+            DangerIndex = result.RiskScore,
+            RiskLevel = result.RiskLevel,
+            Fatigue = Math.Clamp(result.FatigueLevel, 0.0, 1.0),
+            Tiredness = Math.Clamp(result.TirednessLevel, 0.0, 1.0),
+            Endurance = Math.Clamp(result.EnduranceLevel, 0.0, 1.0),
+            Hunger = Math.Clamp(result.HungerLevel, 0.0, 1.0),
+            Thirst = Math.Clamp(result.ThirstLevel, 0.0, 1.0),
+            Pain = Math.Clamp(result.PainLevel, 0.0, 1.0),
+            OutOfBreath = Math.Clamp(result.OutOfBreathLevel, 0.0, 1.0),
+            Queasy = Math.Clamp(result.QueasyLevel, 0.0, 1.0),
+            Panic = Math.Clamp(result.PanicLevel, 0.0, 1.0),
+            Stress = Math.Clamp(result.StressLevel, 0.0, 1.0),
+            InGameSurvivedHours = result.InGameSurvivedHours,
+            RealPlayedHours = result.RealPlayedHours,
+            Moodles = result.ActiveMoodles
+                .Where(moodle => !string.IsNullOrWhiteSpace(moodle))
+                .ToArray(),
+            Issues = issues,
+        };
     }
 
     private void ResetRiskIndicator()
@@ -2077,12 +2273,13 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private async void SessionTimerOnTick(object? sender, EventArgs eventArgs)
     {
-        if (!ShouldRunAutomaticSessionSync() || IsBusy)
+        if (IsBusy || _catalogItems.Count == 0)
         {
             return;
         }
 
-        if (RiskIndicatorEnabled && !HasPlayersDbChangedSinceLastSync())
+        var forceSync = DateTimeOffset.UtcNow - _lastLiveTelemetrySyncAt >= TimeSpan.FromSeconds(3);
+        if (!forceSync && !HasSessionDataChangedSinceLastSync())
         {
             return;
         }
@@ -2094,7 +2291,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private async void SessionWatcherDebounceOnTick(object? sender, EventArgs eventArgs)
     {
         _sessionWatcherDebounceTimer.Stop();
-        if (!_sessionWatcherDirty || !ShouldRunAutomaticSessionSync() || IsBusy)
+        if (!_sessionWatcherDirty || IsBusy || _catalogItems.Count == 0)
         {
             _sessionWatcherDirty = false;
             return;
@@ -2136,7 +2333,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private void OnSessionSaveFileChanged(object sender, FileSystemEventArgs eventArgs)
     {
-        if (!IsPlayersDbFile(eventArgs.Name))
+        if (!IsSessionDataFile(eventArgs.Name))
         {
             return;
         }
@@ -2148,7 +2345,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private void OnSessionSaveFileRenamed(object sender, RenamedEventArgs eventArgs)
     {
-        if (!IsPlayersDbFile(eventArgs.Name) && !IsPlayersDbFile(eventArgs.OldName))
+        if (!IsSessionDataFile(eventArgs.Name) && !IsSessionDataFile(eventArgs.OldName))
         {
             return;
         }
@@ -2158,14 +2355,17 @@ public partial class MainWindowViewModel : ViewModelBase
         _sessionWatcherDebounceTimer.Start();
     }
 
-    private static bool IsPlayersDbFile(string? fileName)
+    private static bool IsSessionDataFile(string? fileName)
     {
         if (string.IsNullOrWhiteSpace(fileName))
         {
             return false;
         }
 
-        return fileName.StartsWith("players.db", StringComparison.OrdinalIgnoreCase);
+        var normalizedName = fileName.Trim();
+        return normalizedName.StartsWith("players.db", StringComparison.OrdinalIgnoreCase) ||
+               normalizedName.Equals("global_mod_data.bin", StringComparison.OrdinalIgnoreCase) ||
+               normalizedName.Equals("map_t.bin", StringComparison.OrdinalIgnoreCase);
     }
 
     private void DisposeSessionWatcher()
@@ -2484,6 +2684,12 @@ public partial class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(UpdatePromptTitleText));
         OnPropertyChanged(nameof(UpdatePromptMessageText));
         OnPropertyChanged(nameof(ReleaseVersionLabelText));
+        OnPropertyChanged(nameof(CompanionTabHeaderText));
+        OnPropertyChanged(nameof(CompanionSurvivalTabText));
+        OnPropertyChanged(nameof(CompanionSleepTabText));
+        OnPropertyChanged(nameof(CompanionIntelligentTodoTabText));
+        OnPropertyChanged(nameof(CompanionRunsTabText));
+        OnPropertyChanged(nameof(CompanionOverlayTabText));
         OnPropertyChanged(nameof(LanguageLabelText));
         OnPropertyChanged(nameof(BookFilterLabelText));
         OnPropertyChanged(nameof(MagazineFilterLabelText));
@@ -2591,6 +2797,13 @@ public partial class MainWindowViewModel : ViewModelBase
         };
     }
 
+    private static int NormalizeOverlayPort(int port)
+    {
+        return port is >= 1 and <= 65535
+            ? port
+            : 8765;
+    }
+
     private async Task SaveStateAsync()
     {
         try
@@ -2616,6 +2829,7 @@ public partial class MainWindowViewModel : ViewModelBase
             _state.TodoManualChecks = _state.TodoManualChecks
                 .Where(entry => entry.Value && !string.IsNullOrWhiteSpace(entry.Key))
                 .ToDictionary(entry => entry.Key, entry => true, StringComparer.OrdinalIgnoreCase);
+            _state.OverlayPort = NormalizeOverlayPort(_state.OverlayPort);
             await _appStateService.SaveAsync(_state);
         }
         catch

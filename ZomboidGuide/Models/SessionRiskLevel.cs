@@ -4,6 +4,7 @@ public enum SessionRiskLevel
 {
     Unknown = 0,
     Safe = 1,
-    Risky = 2,
-    Critical = 3,
+    Caution = 2,
+    Risky = 3,
+    Critical = 4,
 }
