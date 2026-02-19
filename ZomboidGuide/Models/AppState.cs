@@ -53,6 +53,9 @@ public sealed class AppState
 
     public List<TrackedBaseState> TrackedBases { get; set; } = [];
 
+    public Dictionary<string, List<string>> MultiBaseInventoryFullTypesByRun { get; set; } =
+        new(StringComparer.OrdinalIgnoreCase);
+
     public List<string> MultiBaseInventoryFullTypes { get; set; } = [];
 
     public string MultiBaseActiveRunKey { get; set; } = string.Empty;

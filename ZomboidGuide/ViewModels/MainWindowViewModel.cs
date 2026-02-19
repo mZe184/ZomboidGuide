@@ -1012,6 +1012,7 @@ public partial class MainWindowViewModel : ViewModelBase
             _state.KnownCatalogItemIds ??= [];
             _state.TodoManualChecks ??= new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
             _state.TrackedBases ??= [];
+            _state.MultiBaseInventoryFullTypesByRun ??= new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
             _state.MultiBaseInventoryFullTypes ??= [];
             if (_state.InventoryDetectionVersion < CurrentInventoryDetectionVersion)
             {
@@ -1172,6 +1173,7 @@ public partial class MainWindowViewModel : ViewModelBase
                 return;
             }
 
+            _multiBaseSyncService.TryActivateRunForSession(result.SavePath, result.PlayerName);
             var multiBaseMatch = _multiBaseSyncService.BuildCatalogMatch(_catalogItems);
             var inventoryBookIds = result.CheckedBookItemIds
                 .Concat(multiBaseMatch.InventoryBookItemIds)

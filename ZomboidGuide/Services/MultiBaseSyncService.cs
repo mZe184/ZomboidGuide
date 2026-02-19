@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Text.Json;
 using ZomboidGuide.Models;
@@ -18,6 +19,7 @@ public sealed class MultiBaseSyncService
 
     private readonly object _sync = new();
     private readonly Dictionary<string, TrackedBaseState> _basesByRunAndId = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, HashSet<string>> _inventoryFullTypesByRun = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _inventoryFullTypes = new(StringComparer.OrdinalIgnoreCase);
     private string _activeRunKey = string.Empty;
     private DateTimeOffset _lastSnapshotUtc = DateTimeOffset.MinValue;
@@ -27,6 +29,7 @@ public sealed class MultiBaseSyncService
         lock (_sync)
         {
             _basesByRunAndId.Clear();
+            _inventoryFullTypesByRun.Clear();
             _inventoryFullTypes.Clear();
 
             _activeRunKey = state.MultiBaseActiveRunKey?.Trim() ?? string.Empty;
@@ -43,10 +46,42 @@ public sealed class MultiBaseSyncService
                 _basesByRunAndId[BuildCompositeBaseKey(normalized.RunKey, normalized.BaseId)] = normalized;
             }
 
-            foreach (var fullType in state.MultiBaseInventoryFullTypes ?? [])
+            foreach (var entry in state.MultiBaseInventoryFullTypesByRun ?? [])
             {
-                AddNormalizedToken(_inventoryFullTypes, fullType);
+                var runKey = entry.Key?.Trim() ?? string.Empty;
+                if (runKey.Length == 0)
+                {
+                    continue;
+                }
+
+                var tokens = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var fullType in entry.Value ?? [])
+                {
+                    AddNormalizedToken(tokens, fullType);
+                }
+
+                if (tokens.Count > 0)
+                {
+                    _inventoryFullTypesByRun[runKey] = tokens;
+                }
             }
+
+            if (_inventoryFullTypesByRun.Count == 0 && _activeRunKey.Length > 0)
+            {
+                var legacyTokens = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var fullType in state.MultiBaseInventoryFullTypes ?? [])
+                {
+                    AddNormalizedToken(legacyTokens, fullType);
+                }
+
+                if (legacyTokens.Count > 0)
+                {
+                    _inventoryFullTypesByRun[_activeRunKey] = legacyTokens;
+                }
+            }
+
+            LoadActiveRunInventoryTokens();
+            _lastSnapshotUtc = ResolveLastSnapshotForRun(_activeRunKey);
         }
     }
 
@@ -61,7 +96,19 @@ public sealed class MultiBaseSyncService
                 .ThenBy(entry => entry.BaseId, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
-            state.MultiBaseInventoryFullTypes = _inventoryFullTypes
+            state.MultiBaseInventoryFullTypesByRun = _inventoryFullTypesByRun
+                .OrderBy(entry => entry.Key, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(
+                    entry => entry.Key,
+                    entry => entry.Value
+                        .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
+                        .ToList(),
+                    StringComparer.OrdinalIgnoreCase);
+
+            IReadOnlyCollection<string> activeTokens = _inventoryFullTypesByRun.TryGetValue(_activeRunKey, out var tokensForRun)
+                ? tokensForRun
+                : Array.Empty<string>();
+            state.MultiBaseInventoryFullTypes = activeTokens
                 .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
@@ -137,11 +184,8 @@ public sealed class MultiBaseSyncService
         {
             _activeRunKey = runKey;
             _lastSnapshotUtc = timestampUtc;
-            _inventoryFullTypes.Clear();
-            foreach (var token in inventoryTokens)
-            {
-                _inventoryFullTypes.Add(token);
-            }
+            _inventoryFullTypesByRun[runKey] = inventoryTokens.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            LoadActiveRunInventoryTokens();
 
             var compositeKey = BuildCompositeBaseKey(runKey, baseId);
             _basesByRunAndId[compositeKey] = new TrackedBaseState
@@ -218,6 +262,7 @@ public sealed class MultiBaseSyncService
                 _basesByRunAndId.Remove(key);
             }
 
+            _inventoryFullTypesByRun.Remove(_activeRunKey);
             _inventoryFullTypes.Clear();
             _lastSnapshotUtc = DateTimeOffset.MinValue;
         }
@@ -232,7 +277,9 @@ public sealed class MultiBaseSyncService
                 .Select(CloneBaseState)
                 .ToList();
 
-            var inventoryTokens = _inventoryFullTypes.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var inventoryTokens = _inventoryFullTypesByRun.TryGetValue(_activeRunKey, out var tokensForRun)
+                ? tokensForRun.ToHashSet(StringComparer.OrdinalIgnoreCase)
+                : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             return BuildCatalogMatchCore(catalogItems, inventoryTokens, activeBases, _activeRunKey, _lastSnapshotUtc);
         }
     }
@@ -248,12 +295,85 @@ public sealed class MultiBaseSyncService
                 .ThenBy(entry => entry.BaseId, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
-            var inventoryItemsCount = _inventoryFullTypes.Count;
+            var inventoryItemsCount = _inventoryFullTypesByRun.TryGetValue(_activeRunKey, out var tokensForRun)
+                ? tokensForRun.Count
+                : 0;
             return new MultiBaseStateSnapshot(
                 _activeRunKey,
                 _lastSnapshotUtc,
                 inventoryItemsCount,
                 activeBases);
+        }
+    }
+
+    public bool TryActivateRunForSession(string savePath, string playerName)
+    {
+        lock (_sync)
+        {
+            var runGroups = _basesByRunAndId.Values
+                .Where(entry => !string.IsNullOrWhiteSpace(entry.RunKey))
+                .GroupBy(entry => entry.RunKey, StringComparer.OrdinalIgnoreCase)
+                .Select(group => new
+                {
+                    RunKey = group.Key,
+                    Bases = group.ToList(),
+                    LastSeenUtc = group.Max(entry => entry.LastSeenUtc),
+                })
+                .ToList();
+            if (runGroups.Count == 0)
+            {
+                return false;
+            }
+
+            var mode = ExtractModeFromSavePath(savePath);
+            var saveName = ExtractSaveNameFromSavePath(savePath);
+            var normalizedMode = NormalizeToken(mode);
+            var normalizedSaveName = NormalizeToken(saveName);
+            var normalizedPlayer = NormalizeToken(playerName ?? string.Empty);
+
+            var exactCandidates = new List<string>();
+            if (mode.Length > 0 && saveName.Length > 0)
+            {
+                exactCandidates.Add($"{mode}::{saveName}");
+            }
+
+            if (saveName.Length > 0)
+            {
+                exactCandidates.Add(saveName);
+            }
+
+            var exactMatch = runGroups.FirstOrDefault(group =>
+                exactCandidates.Any(candidate =>
+                    group.RunKey.Equals(candidate, StringComparison.OrdinalIgnoreCase)));
+            if (exactMatch is not null)
+            {
+                ActivateRun(exactMatch.RunKey);
+                return true;
+            }
+
+            var bestMatch = runGroups
+                .Select(group => new
+                {
+                    group.RunKey,
+                    group.LastSeenUtc,
+                    Score = CalculateRunScore(
+                        group.RunKey,
+                        group.Bases,
+                        normalizedMode,
+                        normalizedSaveName,
+                        normalizedPlayer),
+                })
+                .Where(entry => entry.Score > 0)
+                .OrderByDescending(entry => entry.Score)
+                .ThenByDescending(entry => entry.LastSeenUtc)
+                .FirstOrDefault();
+            if (bestMatch is null)
+            {
+                return false;
+            }
+
+            ActivateRun(bestMatch.RunKey);
+            return true;
         }
     }
 
@@ -420,6 +540,145 @@ public sealed class MultiBaseSyncService
         }
 
         values.Add(originName);
+    }
+
+    private void ActivateRun(string runKey)
+    {
+        _activeRunKey = runKey?.Trim() ?? string.Empty;
+        LoadActiveRunInventoryTokens();
+        _lastSnapshotUtc = ResolveLastSnapshotForRun(_activeRunKey);
+    }
+
+    private void LoadActiveRunInventoryTokens()
+    {
+        _inventoryFullTypes.Clear();
+        if (!_inventoryFullTypesByRun.TryGetValue(_activeRunKey, out var tokens))
+        {
+            return;
+        }
+
+        foreach (var token in tokens)
+        {
+            _inventoryFullTypes.Add(token);
+        }
+    }
+
+    private DateTimeOffset ResolveLastSnapshotForRun(string runKey)
+    {
+        if (string.IsNullOrWhiteSpace(runKey))
+        {
+            return DateTimeOffset.MinValue;
+        }
+
+        return _basesByRunAndId.Values
+            .Where(entry => entry.RunKey.Equals(runKey, StringComparison.OrdinalIgnoreCase))
+            .Select(entry => entry.LastSeenUtc)
+            .DefaultIfEmpty(DateTimeOffset.MinValue)
+            .Max();
+    }
+
+    private static int CalculateRunScore(
+        string runKey,
+        IReadOnlyCollection<TrackedBaseState> bases,
+        string normalizedMode,
+        string normalizedSaveName,
+        string normalizedPlayer)
+    {
+        var score = 0;
+        var (runPrefix, runSuffix) = SplitRunKey(runKey);
+        var normalizedRunPrefix = NormalizeToken(runPrefix);
+        var normalizedRunSuffix = NormalizeToken(runSuffix);
+        var normalizedRunKey = NormalizeToken(runKey);
+
+        if (normalizedMode.Length > 0)
+        {
+            if (normalizedRunPrefix.Equals(normalizedMode, StringComparison.OrdinalIgnoreCase))
+            {
+                score += 35;
+            }
+
+            if (bases.Any(entry => NormalizeToken(entry.SaveId).Equals(normalizedMode, StringComparison.OrdinalIgnoreCase)))
+            {
+                score += 25;
+            }
+        }
+
+        if (normalizedSaveName.Length > 0)
+        {
+            if (normalizedRunSuffix.Equals(normalizedSaveName, StringComparison.OrdinalIgnoreCase))
+            {
+                score += 50;
+            }
+            else if (normalizedRunKey.Contains(normalizedSaveName, StringComparison.OrdinalIgnoreCase))
+            {
+                score += 20;
+            }
+        }
+
+        if (normalizedPlayer.Length > 0 &&
+            bases.Any(entry => NormalizeToken(entry.PlayerName).Equals(normalizedPlayer, StringComparison.OrdinalIgnoreCase)))
+        {
+            score += 15;
+        }
+
+        return score;
+    }
+
+    private static (string Prefix, string Suffix) SplitRunKey(string runKey)
+    {
+        if (string.IsNullOrWhiteSpace(runKey))
+        {
+            return (string.Empty, string.Empty);
+        }
+
+        var separator = runKey.IndexOf("::", StringComparison.Ordinal);
+        if (separator < 0)
+        {
+            return (runKey, string.Empty);
+        }
+
+        var prefix = runKey[..separator];
+        var suffix = separator + 2 >= runKey.Length
+            ? string.Empty
+            : runKey[(separator + 2)..];
+        return (prefix, suffix);
+    }
+
+    private static string ExtractModeFromSavePath(string savePath)
+    {
+        if (string.IsNullOrWhiteSpace(savePath))
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            var parent = Path.GetDirectoryName(savePath);
+            return string.IsNullOrWhiteSpace(parent)
+                ? string.Empty
+                : Path.GetFileName(parent)?.Trim() ?? string.Empty;
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    private static string ExtractSaveNameFromSavePath(string savePath)
+    {
+        if (string.IsNullOrWhiteSpace(savePath))
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            return Path.GetFileName(savePath)?.Trim() ?? string.Empty;
+        }
+        catch
+        {
+            return string.Empty;
+        }
     }
 
     private static string ResolveRunKey(MultiBaseScanPayload payload)
