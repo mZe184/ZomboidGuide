@@ -642,11 +642,8 @@ public sealed class LocalHttpServer : IDisposable
   <title>ZomboidGuide Overlay</title>
   <style>
     :root {
-      --bg: #0f1217;
-      --panel: #171c25;
       --text: #eef2f7;
       --muted: #a6b1c2;
-      --accent: #2d89ef;
       --good: #2f9e44;
       --warn: #f08c00;
       --bad: #c92a2a;
@@ -676,6 +673,30 @@ public sealed class LocalHttpServer : IDisposable
       font-size: 13px;
     }
     .muted { color: var(--muted); }
+    .slide {
+      display: none;
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    .panel.rotate .slide.active {
+      display: block;
+      animation: slideIn .45s ease forwards;
+    }
+    .panel.static .slide {
+      display: block;
+      opacity: 1;
+      transform: none;
+      animation: none;
+    }
+    .panel.static .slide + .slide {
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
     .row {
       display: grid;
       grid-template-columns: 1fr auto;
@@ -700,7 +721,6 @@ public sealed class LocalHttpServer : IDisposable
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 6px;
-      margin-top: 8px;
     }
     .bar-box {
       background: rgba(255, 255, 255, 0.03);
@@ -731,7 +751,6 @@ public sealed class LocalHttpServer : IDisposable
       display: flex;
       flex-wrap: wrap;
       gap: 6px;
-      margin-top: 4px;
       min-height: 64px;
     }
     .moodle-icon {
@@ -743,67 +762,84 @@ public sealed class LocalHttpServer : IDisposable
       padding: 2px;
       object-fit: contain;
     }
+    .section-title {
+      margin: 0 0 6px 0;
+      font-size: 12px;
+      color: var(--muted);
+      letter-spacing: .2px;
+    }
   </style>
 </head>
 <body>
-  <div class="panel">
+  <div id="panel" class="panel rotate">
     <div class="header">
       <div><strong>ZomboidGuide</strong> <span class="muted" id="runId">run-unknown</span></div>
       <div class="muted" id="worldTime">-</div>
     </div>
 
-    <div class="row"><span id="labelKillsTotal">Kills Total</span><strong id="killsTotal">0</strong></div>
-    <div class="row"><span id="labelKillsThisSession">Kills This Session</span><strong id="killsThisSession">0</strong></div>
-    <div class="row"><span id="labelKillsPerHour">Kills / Hour (played)</span><strong id="killsPerHour">0.0</strong></div>
-    <div class="row"><span id="labelTimeSurvived">Time Survived</span><strong id="timeSurvived">0d 00h 00m</strong></div>
-    <div class="row">
-      <span id="labelDanger">Danger Level</span>
-      <span id="dangerPill" class="danger-pill pill-green">SAFE (0)</span>
-    </div>
+    <div id="slides">
+      <section class="slide active" data-slide="summary">
+        <div class="row"><span id="labelKillsTotal">Kills Total</span><strong id="killsTotal">0</strong></div>
+        <div class="row"><span id="labelKillsThisSession">Kills This Session</span><strong id="killsThisSession">0</strong></div>
+        <div class="row"><span id="labelKillsPerHour">Kills / Hour (played)</span><strong id="killsPerHour">0.0</strong></div>
+        <div class="row"><span id="labelTimeSurvived">Time Survived</span><strong id="timeSurvived">0d 00h 00m</strong></div>
+        <div class="row">
+          <span id="labelDanger">Danger Level</span>
+          <span id="dangerPill" class="danger-pill pill-green">SAFE (0)</span>
+        </div>
+      </section>
 
-    <div class="bars">
-      <div id="fatigue" class="bar-box">
-        <div class="bar-head"><span id="labelFatigue">Fatigue</span><span class="value">0%</span></div>
-        <div class="bar-bg"><div class="bar-fill"></div></div>
-      </div>
-      <div id="tiredness" class="bar-box">
-        <div class="bar-head"><span id="labelTiredness">Tiredness</span><span class="value">0%</span></div>
-        <div class="bar-bg"><div class="bar-fill"></div></div>
-      </div>
-      <div id="endurance" class="bar-box">
-        <div class="bar-head"><span id="labelEndurance">Endurance</span><span class="value">0%</span></div>
-        <div class="bar-bg"><div class="bar-fill"></div></div>
-      </div>
-      <div id="hunger" class="bar-box">
-        <div class="bar-head"><span id="labelHunger">Hunger</span><span class="value">0%</span></div>
-        <div class="bar-bg"><div class="bar-fill"></div></div>
-      </div>
-      <div id="thirst" class="bar-box">
-        <div class="bar-head"><span id="labelThirst">Thirst</span><span class="value">0%</span></div>
-        <div class="bar-bg"><div class="bar-fill"></div></div>
-      </div>
-      <div id="pain" class="bar-box">
-        <div class="bar-head"><span id="labelPain">Pain</span><span class="value">0%</span></div>
-        <div class="bar-bg"><div class="bar-fill"></div></div>
-      </div>
-      <div id="outOfBreath" class="bar-box">
-        <div class="bar-head"><span id="labelOutOfBreath">Out of Breath</span><span class="value">0%</span></div>
-        <div class="bar-bg"><div class="bar-fill"></div></div>
-      </div>
-      <div id="queasy" class="bar-box">
-        <div class="bar-head"><span id="labelQueasy">Queasy</span><span class="value">0%</span></div>
-        <div class="bar-bg"><div class="bar-fill"></div></div>
-      </div>
-    </div>
+      <section class="slide" data-slide="stats">
+        <div class="section-title">Vitals</div>
+        <div class="bars">
+          <div id="fatigue" class="bar-box">
+            <div class="bar-head"><span id="labelFatigue">Fatigue</span><span class="value">0%</span></div>
+            <div class="bar-bg"><div class="bar-fill"></div></div>
+          </div>
+          <div id="tiredness" class="bar-box">
+            <div class="bar-head"><span id="labelTiredness">Tiredness</span><span class="value">0%</span></div>
+            <div class="bar-bg"><div class="bar-fill"></div></div>
+          </div>
+          <div id="endurance" class="bar-box">
+            <div class="bar-head"><span id="labelEndurance">Endurance</span><span class="value">0%</span></div>
+            <div class="bar-bg"><div class="bar-fill"></div></div>
+          </div>
+          <div id="hunger" class="bar-box">
+            <div class="bar-head"><span id="labelHunger">Hunger</span><span class="value">0%</span></div>
+            <div class="bar-bg"><div class="bar-fill"></div></div>
+          </div>
+          <div id="thirst" class="bar-box">
+            <div class="bar-head"><span id="labelThirst">Thirst</span><span class="value">0%</span></div>
+            <div class="bar-bg"><div class="bar-fill"></div></div>
+          </div>
+          <div id="pain" class="bar-box">
+            <div class="bar-head"><span id="labelPain">Pain</span><span class="value">0%</span></div>
+            <div class="bar-bg"><div class="bar-fill"></div></div>
+          </div>
+          <div id="outOfBreath" class="bar-box">
+            <div class="bar-head"><span id="labelOutOfBreath">Out of Breath</span><span class="value">0%</span></div>
+            <div class="bar-bg"><div class="bar-fill"></div></div>
+          </div>
+          <div id="queasy" class="bar-box">
+            <div class="bar-head"><span id="labelQueasy">Queasy</span><span class="value">0%</span></div>
+            <div class="bar-bg"><div class="bar-fill"></div></div>
+          </div>
+        </div>
+      </section>
 
-    <div style="margin-top:8px;">
-      <div class="muted" id="labelMoodles">Moodles</div>
-      <div id="moodlesList" class="moodles-strip"></div>
+      <section class="slide" data-slide="moodles">
+        <div class="section-title" id="labelMoodles">Moodles</div>
+        <div id="moodlesList" class="moodles-strip"></div>
+      </section>
     </div>
   </div>
 
   <script>
+    const ROTATE_INTERVAL_MS = 10000;
+    const POLL_INTERVAL_MS = 1000;
+
     const ids = {
+      panel: document.getElementById("panel"),
       runId: document.getElementById("runId"),
       worldTime: document.getElementById("worldTime"),
       labelKillsTotal: document.getElementById("labelKillsTotal"),
@@ -827,6 +863,12 @@ public sealed class LocalHttpServer : IDisposable
       dangerPill: document.getElementById("dangerPill"),
       moodlesList: document.getElementById("moodlesList")
     };
+
+    const slides = Array.from(document.querySelectorAll(".slide"));
+    let currentSlideIndex = 0;
+    let rotateTimerId = null;
+    let currentRotateMode = true;
+    let serverRotateMode = null;
 
     function toPercent(v) {
       const n = Number(v);
@@ -869,11 +911,71 @@ public sealed class LocalHttpServer : IDisposable
       return "moodle_guide.png";
     }
 
+    function showSlide(index) {
+      if (slides.length === 0) {
+        return;
+      }
+
+      currentSlideIndex = ((index % slides.length) + slides.length) % slides.length;
+      for (let i = 0; i < slides.length; i += 1) {
+        if (i === currentSlideIndex) {
+          slides[i].classList.add("active");
+        } else {
+          slides[i].classList.remove("active");
+        }
+      }
+    }
+
+    function showAllSlides() {
+      for (const slide of slides) {
+        slide.classList.add("active");
+      }
+    }
+
+    function stopRotation() {
+      if (rotateTimerId !== null) {
+        clearInterval(rotateTimerId);
+        rotateTimerId = null;
+      }
+    }
+
+    function startRotation() {
+      stopRotation();
+      if (!currentRotateMode || slides.length <= 1) {
+        return;
+      }
+
+      rotateTimerId = setInterval(() => {
+        showSlide(currentSlideIndex + 1);
+      }, ROTATE_INTERVAL_MS);
+    }
+
+    function applyLayoutMode(rotateSlides) {
+      currentRotateMode = Boolean(rotateSlides);
+      ids.panel.classList.toggle("rotate", currentRotateMode);
+      ids.panel.classList.toggle("static", !currentRotateMode);
+
+      if (currentRotateMode) {
+        showSlide(currentSlideIndex);
+        startRotation();
+      } else {
+        stopRotation();
+        showAllSlides();
+      }
+    }
+
     async function update() {
       try {
         const response = await fetch("/api/state", { cache: "no-store" });
         if (!response.ok) return;
         const data = await response.json();
+
+        const rotateSlides = data.rotateSlides !== false;
+        if (serverRotateMode === null || rotateSlides !== serverRotateMode) {
+          serverRotateMode = rotateSlides;
+          applyLayoutMode(rotateSlides);
+        }
+
         ids.runId.textContent = data.runId || "run-unknown";
         ids.worldTime.textContent = data.worldTime || "-";
         ids.labelKillsTotal.textContent = data.labelKillsTotal || "Kills Total";
@@ -903,27 +1005,27 @@ public sealed class LocalHttpServer : IDisposable
         setBar("pain", data.pain);
         setBar("outOfBreath", data.outOfBreath);
         setBar("queasy", data.queasy);
+
         const moodles = Array.isArray(data.moodles)
           ? data.moodles.filter(m => typeof m === "string" && m.trim().length > 0)
           : [];
         ids.moodlesList.innerHTML = "";
-        if (moodles.length > 0) {
-          for (const moodle of moodles) {
-            const icon = document.createElement("img");
-            icon.className = "moodle-icon";
-            icon.alt = moodle;
-            icon.title = moodle;
-            icon.src = `/api/moodle-icon/${encodeURIComponent(resolveMoodleIconFile(moodle))}`;
-            ids.moodlesList.appendChild(icon);
-          }
+        for (const moodle of moodles) {
+          const icon = document.createElement("img");
+          icon.className = "moodle-icon";
+          icon.alt = moodle;
+          icon.title = moodle;
+          icon.src = `/api/moodle-icon/${encodeURIComponent(resolveMoodleIconFile(moodle))}`;
+          ids.moodlesList.appendChild(icon);
         }
       } catch {
         // Keep old values if polling fails.
       }
     }
 
+    applyLayoutMode(true);
     update();
-    setInterval(update, 1000);
+    setInterval(update, POLL_INTERVAL_MS);
   </script>
 </body>
 </html>

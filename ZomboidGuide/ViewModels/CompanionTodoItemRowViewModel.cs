@@ -33,7 +33,7 @@ public sealed class CompanionTodoItemRowViewModel
 
     public required ICommand DismissCommand { get; init; }
 
-    public string PriorityText => Priority.ToString();
+    public required string PriorityText { get; init; }
 
     public IBrush PriorityBadgeBrush => Priority switch
     {
@@ -43,11 +43,13 @@ public sealed class CompanionTodoItemRowViewModel
         _ => PriorityLowBrush,
     };
 
-    public string MetaText => $"{Category} | {CreatedUtc:HH:mm:ss} UTC";
+    public required string MetaText { get; init; }
 
-    public string PinButtonText => IsPinned ? "Unpin" : "Pin";
+    public required string PinButtonText { get; init; }
 
-    public string DoneButtonText => IsDone ? "Undo" : "Done";
+    public required string DoneButtonText { get; init; }
+
+    public required string DismissButtonText { get; init; }
 
     public double RowOpacity => IsDone ? 0.6 : 1.0;
 

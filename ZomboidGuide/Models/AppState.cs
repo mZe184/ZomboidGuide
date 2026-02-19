@@ -15,11 +15,15 @@ public sealed class AppState
 
     public bool AutoUpdateCheck { get; set; } = true;
 
-    public bool RiskIndicatorEnabled { get; set; }
+    public bool RiskIndicatorEnabled { get; set; } = true;
+
+    public bool RiskAlertSoundsEnabled { get; set; } = true;
 
     public bool OverlayAutoStart { get; set; }
 
     public int OverlayPort { get; set; } = 8765;
+
+    public bool OverlayRotateSlides { get; set; } = true;
 
     public string BookStatusFilterKey { get; set; } = "all";
 

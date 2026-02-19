@@ -159,11 +159,11 @@
     </Window.Resources>
 
     <Grid Margin="16"
-          RowDefinitions="Auto,Auto,*,Auto">
+          RowDefinitions="Auto,*,Auto">
         <Border Classes="card">
-            <Grid RowDefinitions="Auto,Auto,Auto"
+            <Grid RowDefinitions="Auto,Auto,Auto,Auto"
                   ColumnDefinitions="224,*,Auto,300">
-                <Image Grid.RowSpan="3"
+                <Image Grid.RowSpan="4"
                        Grid.Column="0"
                        Width="200"
                        Height="147"
@@ -182,44 +182,9 @@
                                Text="{Binding HeaderSubtitleText}"/>
                 </StackPanel>
 
-                <TextBox Grid.Row="0"
-                         Grid.Column="2"
-                         Grid.ColumnSpan="1"
-                         Width="440"
-                         Height="32"
-                         HorizontalAlignment="Right"
-                         VerticalAlignment="Top"
-                         Margin="12,0,0,6"
-                         TextWrapping="NoWrap"
-                         Watermark="{Binding GamePathWatermarkText}"
-                         Text="{Binding GamePath, Mode=TwoWay}"/>
-
                 <Button Grid.Row="0"
                         Grid.Column="3"
-                        Margin="12,0,0,6"
-                        HorizontalAlignment="Right"
-                        MaxWidth="300"
-                        MinWidth="300"
-                        VerticalAlignment="Top"
-                        Command="{Binding AutoDetectPathCommand}">
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                        <material:MaterialIcon Kind="MapSearch" Width="16" Height="16"/>
-                        <TextBlock Text="{Binding AutoDetectPathButtonText}"/>
-                    </StackPanel>
-                </Button>
-
-                <ToggleSwitch Grid.Row="1"
-                              Grid.Column="2"
-                              Margin="0,6,0,0"
-                              HorizontalAlignment="Right"
-                              VerticalAlignment="Center"
-                              OffContent="{Binding ModsOffText}"
-                              OnContent="{Binding ModsOnText}"
-                              IsChecked="{Binding IncludeMods, Mode=TwoWay}"/>
-
-                <Button Grid.Row="1"
-                        Grid.Column="3"
-                        Margin="0,6,0,0"
+                        Margin="0,0,0,0"
                         HorizontalAlignment="Right"
                         MaxWidth="300"
                         MinWidth="300"
@@ -230,90 +195,42 @@
                     </StackPanel>
                 </Button>
 
-                <Button Grid.Row="2"
-                        Grid.Column="3"
-                        Margin="0,6,0,0"
-                        HorizontalAlignment="Right"
-                        MaxWidth="300"
-                        MinWidth="300"
-                        Command="{Binding ShowDiagnosticsCommand}">
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                        <material:MaterialIcon Kind="Bug" Width="16" Height="16"/>
-                        <TextBlock Text="{Binding DiagnosticsButtonText}"/>
-                    </StackPanel>
-                </Button>
-            </Grid>
-        </Border>
-
-        <Border Grid.Row="1"
-                Classes="card"
-                Margin="0,10,0,0">
-            <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto"
-                  ColumnDefinitions="*,*,Auto,Auto">
-                <ToggleSwitch Grid.Row="0"
-                              Margin="0,8,8,0"
-                              OffContent="{Binding AutoSessionSyncOffText}"
-                              OnContent="{Binding AutoSessionSyncOnText}"
-                              IsChecked="{Binding AutoSessionSync, Mode=TwoWay}"/>
-
-                <Button Grid.Row="0"
-                        Grid.Column="1"
-                        Margin="0,8,0,0"
-                        HorizontalAlignment="Right"
-                        MaxWidth="300"
-                        MinWidth="300"
-                        Command="{Binding UncheckAllCommand}">
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                        <material:MaterialIcon Kind="Broom" Width="16" Height="16"/>
-                        <TextBlock Text="{Binding ClearChecksButtonText}"/>
-                    </StackPanel>
-                </Button>
-
-                <ToggleSwitch Grid.Row="1"
-                              Margin="0,8,8,0"
-                              OffContent="{Binding AutoUpdateOffText}"
-                              OnContent="{Binding AutoUpdateOnText}"
-                              IsChecked="{Binding AutoUpdateCheck, Mode=TwoWay}"/>
-
                 <Button Grid.Row="1"
-                        Grid.Column="1"
-                        Margin="0,8,0,0"
+                        Grid.Column="3"
+                        Margin="0,0,0,0"
                         HorizontalAlignment="Right"
                         MaxWidth="300"
                         MinWidth="300"
-                        Command="{Binding CheckUpdatesCommand}">
+                        Command="{Binding OpenSettingsCommand}">
                     <StackPanel Orientation="Horizontal" Spacing="6">
-                        <material:MaterialIcon Kind="Update" Width="16" Height="16"/>
-                        <TextBlock Text="{Binding CheckUpdatesButtonText}"/>
+                        <material:MaterialIcon Kind="CogOutline" Width="16" Height="16"/>
+                        <TextBlock Text="{Binding SettingsButtonText}"/>
                     </StackPanel>
                 </Button>
 
-                <ToggleSwitch Grid.Row="2"
-                              Margin="0,8,8,0"
-                              OffContent="{Binding RiskIndicatorOffText}"
-                              OnContent="{Binding RiskIndicatorOnText}"
-                              IsChecked="{Binding RiskIndicatorEnabled, Mode=TwoWay}"/>
-
-                <Border Grid.RowSpan="4"
-                         Grid.ColumnSpan="4"
-                         Margin="0,8,0,0"
-                         Padding="12,10"
+                <Border Grid.Row="0" Grid.RowSpan="3"
+                        Grid.Column="2"
+                        Margin="0,8,20,0"
+                        Padding="12,10"
                         MinWidth="420"
                         MaxWidth="620"
-                        HorizontalAlignment="Center"
+                        HorizontalAlignment="Right"
                         IsVisible="{Binding IsRiskIndicatorVisible}"
                         Classes="risk-chip">
                     <StackPanel Spacing="6">
-                        <StackPanel Orientation="Horizontal"
-                                    Spacing="6">
+                        <Grid ColumnDefinitions="Auto,*">
                             <material:MaterialIcon Kind="AlertCircleOutline"
                                                    Width="18"
                                                    Height="18"
                                                    Foreground="{Binding RiskBadgeBrush}"/>
-                            <TextBlock Classes="risk-title"
+                            <TextBlock Grid.Column="1"
+                                       Classes="risk-title"
+                                       Margin="6,0,0,0"
                                        VerticalAlignment="Center"
+                                       TextWrapping="Wrap"
+                                       TextTrimming="None"
                                        Text="{Binding RiskIndicatorTitleText}"/>
-                        </StackPanel>
+                        </Grid>
                         <StackPanel Orientation="Horizontal"
                                     Spacing="8">
                             <Border Classes="state-badge"
@@ -333,61 +250,10 @@
                                    Text="{Binding RiskHintText}"/>
                     </StackPanel>
                 </Border>
-
-                <TextBlock Grid.Row="4"
-                           Grid.Column="1"
-                           Grid.ColumnSpan="3"
-                           Margin="0,8,0,0"
-                           VerticalAlignment="Center"
-                           HorizontalAlignment="Right"
-                           TextAlignment="Right"
-                           Classes="caption"
-                           MinWidth="300"
-                           MaxWidth="300"
-                           Text="{Binding UpdateStatusMessage}"/>
-                <Button Grid.Row="5"
-                        Classes="update-available"
-                        Grid.ColumnSpan="2"
-                        HorizontalAlignment="Right"
-                        Margin="0,8,0,0"
-                        Command="{Binding InstallUpdateCommand}"
-                        IsVisible="{Binding IsUpdateAvailable}">
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                        <material:MaterialIcon Kind="Download" Width="16" Height="16"/>
-                        <TextBlock Text="{Binding InstallUpdateButtonText}"/>
-                    </StackPanel>
-                </Button>
-                
-                <Border Grid.Row="6"
-                        Grid.Column="1"
-                        Grid.ColumnSpan="3"
-                        Margin="0,8,0,0"
-                        MaxWidth="300"
-                        MinWidth="300"
-                        HorizontalAlignment="Right"
-                        Classes="language-chip">
-                    <Grid ColumnDefinitions="Auto,Auto,*">
-                        <TextBlock Margin="10,0,6,0"
-                                   VerticalAlignment="Center"
-                                   Text="{Binding LanguageLabelText}"/>
-                        <TextBlock Grid.Column="1"
-                                   VerticalAlignment="Center"
-                                   Classes="caption"
-                                   Text="|"/>
-                        <ComboBox Grid.Column="2"
-                                  Margin="8,0,8,0"
-                                  HorizontalAlignment="Stretch"
-                                  VerticalAlignment="Center"
-                                  Classes="language-inline"
-                                  ItemTemplate="{StaticResource LanguageOptionTemplate}"
-                                  ItemsSource="{Binding AvailableLanguages}"
-                                  SelectedItem="{Binding SelectedLanguage, Mode=TwoWay}"/>
-                    </Grid>
-                </Border>
             </Grid>
         </Border>
 
-        <Border Grid.Row="2"
+        <Border Grid.Row="1"
                 Classes="card"
                 Margin="0,10,0,0"
                 Padding="6">
@@ -499,12 +365,18 @@
                         </StackPanel>
                     </TabItem.Header>
                     <Grid Margin="2"
-                          RowDefinitions="Auto,*">
-                        <TextBlock Classes="caption"
+                          RowDefinitions="Auto,Auto,*">
+                        <Border Classes="item-card"
+                                Margin="0,0,0,8"
+                                MaxHeight="340">
+                            <ContentControl Content="{Binding CompanionIntelligentTodoPage}"/>
+                        </Border>
+                        <TextBlock Grid.Row="1"
+                                   Classes="caption"
                                    Margin="2,0,2,8"
                                    TextWrapping="Wrap"
                                    Text="{Binding TodoSubtitleText}"/>
-                        <TreeView Grid.Row="1"
+                        <TreeView Grid.Row="2"
                                   ItemTemplate="{StaticResource TodoTaskTemplate}"
                                   ItemsSource="{Binding TodoItems}"/>
                     </Grid>
@@ -523,17 +395,11 @@
                         <TabItem Header="{Binding CompanionSurvivalTabText}">
                             <ContentControl Content="{Binding CompanionSurvivalPage}"/>
                         </TabItem>
-                        <TabItem Header="{Binding CompanionIntelligentTodoTabText}">
-                            <ContentControl Content="{Binding CompanionIntelligentTodoPage}"/>
-                        </TabItem>
                         <TabItem Header="{Binding CompanionSleepTabText}">
                             <ContentControl Content="{Binding CompanionSleepPage}"/>
                         </TabItem>
                         <TabItem Header="{Binding CompanionRunsTabText}">
                             <ContentControl Content="{Binding CompanionRunsPage}"/>
-                        </TabItem>
-                        <TabItem Header="{Binding CompanionOverlayTabText}">
-                            <ContentControl Content="{Binding CompanionOverlayPage}"/>
                         </TabItem>
                     </TabControl>
                 </TabItem>
@@ -541,11 +407,11 @@
             </Grid>
         </Border>
 
-        <Border Grid.Row="3"
+        <Border Grid.Row="2"
                 Classes="card"
                 Margin="0,10,0,0">
             <Grid RowDefinitions="Auto,Auto"
-                  ColumnDefinitions="*,Auto,Auto,Auto">
+                  ColumnDefinitions="*,Auto,Auto,Auto,Auto">
                 
                 <TextBlock VerticalAlignment="Center"
                            Text="{Binding StatusMessage}"/>
@@ -563,18 +429,20 @@
                         <TextBlock Text="{Binding TwitchButtonText}"/>
                     </StackPanel>
                 </Button>
-                <Button Grid.Column="3"  HorizontalAlignment="Right"
+                <Button Grid.Column="3" Grid.ColumnSpan="2" HorizontalAlignment="Right"
                         Classes="link-button"
                         Margin="8,0,0,0"
                         Command="{Binding OpenZickchenTwitchLinkCommand}">
                     <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right">
-                        <material:MaterialIcon Kind="Twitch" Width="16" Height="16"/>
-                        <TextBlock Text="{Binding TwitchButtonTextZickchen}"  HorizontalAlignment="Right"/>
-                    </StackPanel>
-                </Button>
+                            <material:MaterialIcon Kind="Twitch" Width="16" Height="16"/>
+                            <TextBlock Text="{Binding TwitchButtonTextZickchen}"  HorizontalAlignment="Right"/>
+                        </StackPanel>
+                    </Button>
                 <TextBlock Grid.Row="1"
-                           Margin="0,8,0,0"
+                           Grid.Column="4"
+                           Margin="16,8,0,0"
                            VerticalAlignment="Center"
+                           HorizontalAlignment="Right"
                            Classes="caption"
                            Text="{Binding ReleaseVersionText}"/>
                 <TextBlock Grid.Row="1"
@@ -598,7 +466,7 @@
             </Grid>
         </Border>
 
-        <Border Grid.RowSpan="4"
+        <Border Grid.RowSpan="3"
                 IsVisible="{Binding IsDiagnosticsVisible}"
                 Background="#AA000000">
             <Grid>
@@ -630,7 +498,7 @@
             </Grid>
         </Border>
 
-        <Border Grid.RowSpan="4"
+        <Border Grid.RowSpan="3"
                 IsVisible="{Binding IsUpdatePromptVisible}"
                 Background="#AA000000">
             <Grid>
@@ -662,6 +530,157 @@
                                     <material:MaterialIcon Kind="Download" Width="16" Height="16"/>
                                     <TextBlock Text="{Binding InstallUpdateButtonText}"/>
                                 </StackPanel>
+                            </Button>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Border>
+
+        <Border Grid.RowSpan="3"
+                IsVisible="{Binding IsSettingsVisible}"
+                Background="#AA000000">
+            <Grid>
+                <Border Classes="card update-dialog-card"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Width="980"
+                        MaxWidth="1160">
+                    <StackPanel Spacing="12">
+                        <Grid ColumnDefinitions="Auto,*">
+                            <material:MaterialIcon Kind="CogOutline" Width="22" Height="22"/>
+                            <TextBlock Grid.Column="1"
+                                       Classes="update-dialog-title"
+                                       Margin="8,0,0,0"
+                                       VerticalAlignment="Center"
+                                       TextWrapping="Wrap"
+                                       TextTrimming="None"
+                                       Text="{Binding SettingsDialogTitleText}"/>
+                        </Grid>
+
+                        <ScrollViewer MaxHeight="620"
+                                      HorizontalScrollBarVisibility="Disabled"
+                                      VerticalScrollBarVisibility="Auto">
+                            <StackPanel Spacing="10">
+                                <Border Classes="item-card"
+                                        Padding="10">
+                                    <Grid ColumnDefinitions="*,Auto"
+                                          RowDefinitions="Auto,Auto">
+                                        <TextBox Grid.Row="0"
+                                                 Grid.Column="0"
+                                                 Height="32"
+                                                 Margin="0,0,8,0"
+                                                 TextWrapping="NoWrap"
+                                                 Watermark="{Binding GamePathWatermarkText}"
+                                                 Text="{Binding GamePath, Mode=TwoWay}"/>
+                                        <Button Grid.Row="0"
+                                                Grid.Column="1"
+                                                MinWidth="220"
+                                                Command="{Binding AutoDetectPathCommand}">
+                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                <material:MaterialIcon Kind="MapSearch" Width="16" Height="16"/>
+                                                <TextBlock Text="{Binding AutoDetectPathButtonText}"/>
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Grid.Row="1"
+                                                Grid.Column="1"
+                                                Margin="0,8,0,0"
+                                                MinWidth="220"
+                                                Command="{Binding ShowDiagnosticsCommand}">
+                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                <material:MaterialIcon Kind="Bug" Width="16" Height="16"/>
+                                                <TextBlock Text="{Binding DiagnosticsButtonText}"/>
+                                            </StackPanel>
+                                        </Button>
+                                    </Grid>
+                                </Border>
+
+                                <Border Classes="item-card"
+                                        Padding="10">
+                                    <Grid ColumnDefinitions="Auto,Auto,*"
+                                          RowDefinitions="Auto,Auto,Auto">
+                                        <Border Grid.Row="0"
+                                                Grid.Column="0"
+                                                Grid.ColumnSpan="3"
+                                                Classes="language-chip"
+                                                MaxWidth="360"
+                                                HorizontalAlignment="Left">
+                                            <Grid ColumnDefinitions="Auto,Auto,*">
+                                                <TextBlock Margin="10,0,6,0"
+                                                           VerticalAlignment="Center"
+                                                           Text="{Binding LanguageLabelText}"/>
+                                                <TextBlock Grid.Column="1"
+                                                           VerticalAlignment="Center"
+                                                           Classes="caption"
+                                                           Text="|"/>
+                                                <ComboBox Grid.Column="2"
+                                                          Margin="8,0,8,0"
+                                                          HorizontalAlignment="Stretch"
+                                                          VerticalAlignment="Center"
+                                                          Classes="language-inline"
+                                                          ItemTemplate="{StaticResource LanguageOptionTemplate}"
+                                                          ItemsSource="{Binding AvailableLanguages}"
+                                                          SelectedItem="{Binding SelectedLanguage, Mode=TwoWay}"/>
+                                            </Grid>
+                                        </Border>
+
+                                        <Button Grid.Row="1"
+                                                Grid.Column="0"
+                                                Margin="0,8,0,0"
+                                                MinWidth="260"
+                                                Command="{Binding CheckUpdatesCommand}">
+                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                <material:MaterialIcon Kind="Update" Width="16" Height="16"/>
+                                                <TextBlock Text="{Binding CheckUpdatesButtonText}"/>
+                                            </StackPanel>
+                                        </Button>
+
+                                        <Button Grid.Row="2"
+                                                Grid.Column="0"
+                                                Margin="0,8,0,0"
+                                                MinWidth="260"
+                                                Command="{Binding UncheckAllCommand}">
+                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                <material:MaterialIcon Kind="Broom" Width="16" Height="16"/>
+                                                <TextBlock Text="{Binding ClearChecksButtonText}"/>
+                                            </StackPanel>
+                                        </Button>
+                                    </Grid>
+                                </Border>
+
+                                <Border Classes="item-card"
+                                        Padding="10">
+                                    <StackPanel Spacing="8">
+                                        <ToggleSwitch OffContent="{Binding ModsOffText}"
+                                                      OnContent="{Binding ModsOnText}"
+                                                      IsChecked="{Binding IncludeMods, Mode=TwoWay}"/>
+                                        <ToggleSwitch OffContent="{Binding AutoSessionSyncOffText}"
+                                                      OnContent="{Binding AutoSessionSyncOnText}"
+                                                      IsChecked="{Binding AutoSessionSync, Mode=TwoWay}"/>
+                                        <ToggleSwitch OffContent="{Binding AutoUpdateOffText}"
+                                                      OnContent="{Binding AutoUpdateOnText}"
+                                                      IsChecked="{Binding AutoUpdateCheck, Mode=TwoWay}"/>
+                                        <ToggleSwitch OffContent="{Binding RiskIndicatorOffText}"
+                                                      OnContent="{Binding RiskIndicatorOnText}"
+                                                      IsChecked="{Binding RiskIndicatorEnabled, Mode=TwoWay}"/>
+                                        <ToggleSwitch OffContent="{Binding RiskAlertSoundsOffText}"
+                                                      OnContent="{Binding RiskAlertSoundsOnText}"
+                                                      IsChecked="{Binding RiskAlertSoundsEnabled, Mode=TwoWay}"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Classes="item-card"
+                                        Padding="10">
+                                    <ContentControl Content="{Binding CompanionOverlayPage}"/>
+                                </Border>
+                            </StackPanel>
+                        </ScrollViewer>
+
+                        <StackPanel Orientation="Horizontal"
+                                    HorizontalAlignment="Right"
+                                    Spacing="8">
+                            <Button Command="{Binding CloseSettingsCommand}">
+                                <TextBlock Text="{Binding CloseSettingsButtonText}"/>
                             </Button>
                         </StackPanel>
                     </StackPanel>

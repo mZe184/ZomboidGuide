@@ -39,6 +39,8 @@ public partial class MainWindowViewModel : ViewModelBase
     private readonly SleepOptimizer _sleepOptimizer = new();
     private readonly TodoEngine _todoEngine = new();
     private readonly TodoStateStore _todoStateStore = new();
+    private readonly RunRepository _runRepository = new();
+    private readonly RunComparisonService _runComparisonService = new();
     private readonly OverlayStateProvider _overlayStateProvider;
     private readonly LocalHttpServer _localOverlayServer;
 
@@ -72,6 +74,8 @@ public partial class MainWindowViewModel : ViewModelBase
     private DateTime _lastObservedGlobalModDataWriteUtc = DateTime.MinValue;
     private DateTime _lastObservedMapTimeWriteUtc = DateTime.MinValue;
     private DateTimeOffset _lastLiveTelemetrySyncAt = DateTimeOffset.MinValue;
+    private SessionRiskLevel _lastRiskLevelForSound = SessionRiskLevel.Unknown;
+    private bool _riskSoundInitialized;
 
     [ObservableProperty]
     private ObservableCollection<BookCategoryGroupViewModel> filteredBookGroups = [];
@@ -131,6 +135,9 @@ public partial class MainWindowViewModel : ViewModelBase
     private bool riskIndicatorEnabled;
 
     [ObservableProperty]
+    private bool riskAlertSoundsEnabled = true;
+
+    [ObservableProperty]
     private SessionRiskLevel riskLevel = SessionRiskLevel.Unknown;
 
     [ObservableProperty]
@@ -187,6 +194,9 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private string diagnosticsText = string.Empty;
 
+    [ObservableProperty]
+    private bool isSettingsVisible;
+
     public string WindowTitleText => L("MietzeMatze's Zomboid Guide", "MietzeMatze's Zomboid Guide");
 
     public string HeaderTitleText => L("MietzeMatze's Zomboid Guide", "MietzeMatze's Zomboid Guide");
@@ -217,6 +227,12 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public string CloseDiagnosticsButtonText => L("Close", "Schließen");
 
+    public string SettingsButtonText => L("Settings", "Einstellungen");
+
+    public string SettingsDialogTitleText => L("Settings", "Einstellungen");
+
+    public string CloseSettingsButtonText => L("Close", "Schließen");
+
     public string SearchWatermarkText => L(
         "Search skills, books, magazines, recipes ...",
         "Suche in Skills, Büchern, Magazinen, Rezepten ...");
@@ -234,6 +250,10 @@ public partial class MainWindowViewModel : ViewModelBase
     public string RiskIndicatorOffText => L("Risk Indicator Off", "Risiko-Indikator aus");
 
     public string RiskIndicatorOnText => L("Risk Indicator On", "Risiko-Indikator an");
+
+    public string RiskAlertSoundsOffText => L("Risk Sounds Off", "Risiko-Sounds aus");
+
+    public string RiskAlertSoundsOnText => L("Risk Sounds On", "Risiko-Sounds an");
 
     public string RiskIndicatorTitleText => L("Survival Risk", "Überlebensrisiko");
 
@@ -338,11 +358,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public string CompanionSleepTabText => L("Sleep", "Schlaf");
 
-    public string CompanionIntelligentTodoTabText => L("Intelligent To-Do", "Intelligentes To-Do");
-
     public string CompanionRunsTabText => L("Runs", "Runs");
-
-    public string CompanionOverlayTabText => L("Overlay", "Overlay");
 
     public CompanionSurvivalViewModel CompanionSurvivalPage { get; }
 
@@ -362,19 +378,39 @@ public partial class MainWindowViewModel : ViewModelBase
             _sleepOptimizer,
             _todoEngine,
             _uiLocalizationService,
-            () => _state.LanguageCode ?? string.Empty);
+            () => _state.LanguageCode ?? string.Empty,
+            () => _state.OverlayRotateSlides);
         _localOverlayServer = new LocalHttpServer(_overlayStateProvider, () => _state.GamePath ?? string.Empty);
 
-        CompanionSurvivalPage = new CompanionSurvivalViewModel(_liveStateStore, _statsEngine, () => _state.GamePath ?? string.Empty);
-        CompanionSleepPage = new CompanionSleepViewModel(_liveStateStore, _sleepOptimizer);
+        CompanionSurvivalPage = new CompanionSurvivalViewModel(
+            _liveStateStore,
+            _statsEngine,
+            () => _state.GamePath ?? string.Empty,
+            _uiLocalizationService,
+            () => _state.LanguageCode ?? string.Empty);
+        CompanionSleepPage = new CompanionSleepViewModel(
+            _liveStateStore,
+            _sleepOptimizer,
+            _uiLocalizationService,
+            () => _state.LanguageCode ?? string.Empty);
         CompanionIntelligentTodoPage = new CompanionIntelligentTodoViewModel(
             _liveStateStore,
             _statsEngine,
             _sleepOptimizer,
             _todoEngine,
-            _todoStateStore);
-        CompanionRunsPage = new CompanionRunsViewModel();
-        CompanionOverlayPage = new CompanionOverlayViewModel(_localOverlayServer);
+            _todoStateStore,
+            _uiLocalizationService,
+            () => _state.LanguageCode ?? string.Empty);
+        CompanionRunsPage = new CompanionRunsViewModel(
+            _runRepository,
+            _runComparisonService,
+            _uiLocalizationService,
+            () => _state.LanguageCode ?? string.Empty,
+            () => _liveStateStore.GetRunId());
+        CompanionOverlayPage = new CompanionOverlayViewModel(
+            _localOverlayServer,
+            _uiLocalizationService,
+            () => _state.LanguageCode ?? string.Empty);
         CompanionOverlayPage.OverlaySettingsChanged += OnOverlaySettingsChanged;
 
         ApplyInitialUiTextDefaults();
@@ -515,8 +551,15 @@ public partial class MainWindowViewModel : ViewModelBase
         }
     }
 
+    partial void OnRiskAlertSoundsEnabledChanged(bool value)
+    {
+        _state.RiskAlertSoundsEnabled = value;
+        _ = SaveStateAsync();
+    }
+
     partial void OnRiskLevelChanged(SessionRiskLevel value)
     {
+        TryPlayRiskEscalationSound(value);
         OnPropertyChanged(nameof(RiskLevelText));
         OnPropertyChanged(nameof(RiskHintText));
         OnPropertyChanged(nameof(RiskBadgeBrush));
@@ -573,6 +616,8 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     private void ShowDiagnostics()
     {
+        IsSettingsVisible = false;
+
         var currentPathState = string.IsNullOrWhiteSpace(GamePath)
             ? "gamePath=empty"
             : $"gamePath={GamePath}; exists={Directory.Exists(GamePath)}; mediaExists={Directory.Exists(Path.Combine(GamePath, "media"))}";
@@ -596,6 +641,18 @@ public partial class MainWindowViewModel : ViewModelBase
     private void CloseDiagnostics()
     {
         IsDiagnosticsVisible = false;
+    }
+
+    [RelayCommand]
+    private void OpenSettings()
+    {
+        IsSettingsVisible = true;
+    }
+
+    [RelayCommand]
+    private void CloseSettings()
+    {
+        IsSettingsVisible = false;
     }
 
     private static string FormatDiagnosticsSection(string label, string? value)
@@ -748,10 +805,11 @@ public partial class MainWindowViewModel : ViewModelBase
         CompanionOverlayPage.OverlaySettingsChanged -= OnOverlaySettingsChanged;
     }
 
-    private void OnOverlaySettingsChanged(int port, bool autoStart)
+    private void OnOverlaySettingsChanged(int port, bool autoStart, bool rotateSlides)
     {
         _state.OverlayPort = NormalizeOverlayPort(port);
         _state.OverlayAutoStart = autoStart;
+        _state.OverlayRotateSlides = rotateSlides;
         _ = SaveStateAsync();
     }
 
@@ -813,6 +871,7 @@ public partial class MainWindowViewModel : ViewModelBase
             AutoSessionSync = _state.AutoSessionSync;
             AutoUpdateCheck = _state.AutoUpdateCheck;
             RiskIndicatorEnabled = _state.RiskIndicatorEnabled;
+            RiskAlertSoundsEnabled = _state.RiskAlertSoundsEnabled;
             GamePath = _state.GamePath ?? string.Empty;
             _state.LanguageCode = ResolvePreferredLanguageCode(
                 _state.LanguageCode,
@@ -827,7 +886,7 @@ public partial class MainWindowViewModel : ViewModelBase
                 ? "all"
                 : _state.RecipeStatusFilterKey.ToLowerInvariant();
             _state.OverlayPort = NormalizeOverlayPort(_state.OverlayPort);
-            CompanionOverlayPage.ApplySettings(_state.OverlayPort, _state.OverlayAutoStart);
+            CompanionOverlayPage.ApplySettings(_state.OverlayPort, _state.OverlayAutoStart, _state.OverlayRotateSlides);
             ApplyUiLanguage();
             UpdateReleaseVersionText();
 
@@ -980,7 +1039,9 @@ public partial class MainWindowViewModel : ViewModelBase
                 await SaveStateAsync();
             }
 
-            _liveStateStore.Update(BuildGameSnapshot(result));
+            var snapshot = BuildGameSnapshot(result);
+            _liveStateStore.Update(snapshot);
+            _runRepository.UpsertSnapshot(new RunId(_liveStateStore.GetRunId()), snapshot, result.PlayerName);
             _lastLiveTelemetrySyncAt = DateTimeOffset.UtcNow;
 
             if (RiskIndicatorEnabled)
@@ -2160,6 +2221,75 @@ public partial class MainWindowViewModel : ViewModelBase
         RiskNotes = BuildLocalizedRiskNotes(result);
     }
 
+    private void TryPlayRiskEscalationSound(SessionRiskLevel newLevel)
+    {
+        if (!_riskSoundInitialized)
+        {
+            _lastRiskLevelForSound = newLevel;
+            _riskSoundInitialized = true;
+            return;
+        }
+
+        var previousLevel = _lastRiskLevelForSound;
+        _lastRiskLevelForSound = newLevel;
+
+        if (!RiskAlertSoundsEnabled || !RiskIndicatorEnabled)
+        {
+            return;
+        }
+
+        if (newLevel <= previousLevel || newLevel == SessionRiskLevel.Unknown)
+        {
+            return;
+        }
+
+        if (newLevel >= SessionRiskLevel.Risky && previousLevel < SessionRiskLevel.Risky)
+        {
+            PlayHighRiskAlarm();
+            return;
+        }
+
+        if (newLevel == SessionRiskLevel.Caution && previousLevel < SessionRiskLevel.Caution)
+        {
+            PlayCautionPing();
+        }
+    }
+
+    private static void PlayCautionPing()
+    {
+        _ = Task.Run(() =>
+        {
+            TryBeep(1200, 120);
+        });
+    }
+
+    private static void PlayHighRiskAlarm()
+    {
+        _ = Task.Run(async () =>
+        {
+            TryBeep(900, 220);
+            await Task.Delay(90).ConfigureAwait(false);
+            TryBeep(700, 340);
+        });
+    }
+
+    private static void TryBeep(int frequency, int durationMs)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        try
+        {
+            Console.Beep(frequency, durationMs);
+        }
+        catch
+        {
+            // Ignore sound playback errors.
+        }
+    }
+
     private GameSnapshot BuildGameSnapshot(SessionSyncResult result)
     {
         var issues = new List<string>();
@@ -2230,6 +2360,8 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private void ResetRiskIndicator()
     {
+        _riskSoundInitialized = false;
+        _lastRiskLevelForSound = SessionRiskLevel.Unknown;
         RiskLevel = SessionRiskLevel.Unknown;
         RiskScore = 0;
         RiskNotes = string.Empty;
@@ -2654,6 +2786,12 @@ public partial class MainWindowViewModel : ViewModelBase
             DataSource = L("Not loaded yet", "Noch nicht geladen");
         }
 
+        CompanionSurvivalPage.ApplyLocalization();
+        CompanionSleepPage.ApplyLocalization();
+        CompanionIntelligentTodoPage.ApplyLocalization();
+        CompanionRunsPage.ApplyLocalization();
+        CompanionOverlayPage.ApplyLocalization();
+
         OnPropertyChanged(nameof(HeaderSubtitleText));
         OnPropertyChanged(nameof(HeaderTitleText));
         OnPropertyChanged(nameof(WindowTitleText));
@@ -2665,6 +2803,7 @@ public partial class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(LoadFallbackButtonText));
         OnPropertyChanged(nameof(SyncSessionButtonText));
         OnPropertyChanged(nameof(DiagnosticsButtonText));
+        OnPropertyChanged(nameof(SettingsButtonText));
         OnPropertyChanged(nameof(SearchWatermarkText));
         OnPropertyChanged(nameof(AutoSessionSyncOffText));
         OnPropertyChanged(nameof(AutoSessionSyncOnText));
@@ -2673,6 +2812,8 @@ public partial class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(AutoUpdateOnText));
         OnPropertyChanged(nameof(RiskIndicatorOffText));
         OnPropertyChanged(nameof(RiskIndicatorOnText));
+        OnPropertyChanged(nameof(RiskAlertSoundsOffText));
+        OnPropertyChanged(nameof(RiskAlertSoundsOnText));
         OnPropertyChanged(nameof(RiskIndicatorTitleText));
         OnPropertyChanged(nameof(RiskLevelText));
         OnPropertyChanged(nameof(RiskScoreText));
@@ -2684,12 +2825,12 @@ public partial class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(UpdatePromptTitleText));
         OnPropertyChanged(nameof(UpdatePromptMessageText));
         OnPropertyChanged(nameof(ReleaseVersionLabelText));
+        OnPropertyChanged(nameof(SettingsDialogTitleText));
+        OnPropertyChanged(nameof(CloseSettingsButtonText));
         OnPropertyChanged(nameof(CompanionTabHeaderText));
         OnPropertyChanged(nameof(CompanionSurvivalTabText));
         OnPropertyChanged(nameof(CompanionSleepTabText));
-        OnPropertyChanged(nameof(CompanionIntelligentTodoTabText));
         OnPropertyChanged(nameof(CompanionRunsTabText));
-        OnPropertyChanged(nameof(CompanionOverlayTabText));
         OnPropertyChanged(nameof(LanguageLabelText));
         OnPropertyChanged(nameof(BookFilterLabelText));
         OnPropertyChanged(nameof(MagazineFilterLabelText));

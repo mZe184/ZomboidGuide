@@ -14,15 +14,15 @@
                         Padding="10">
                     <StackPanel Spacing="6">
                         <TextBlock Classes="item-title"
-                                   Text="Combat"/>
+                                   Text="{Binding CombatSectionTitle}"/>
                         <TextBlock Classes="caption"
-                                   Text="{Binding KillsTotalText, StringFormat='Total Kills: {0}'}"/>
+                                   Text="{Binding KillsTotalLineText}"/>
                         <TextBlock Classes="caption"
-                                   Text="{Binding KillsThisSessionText, StringFormat='Kills This Session: {0}'}"/>
+                                   Text="{Binding KillsThisSessionLineText}"/>
                         <TextBlock Classes="caption"
-                                   Text="{Binding KillsPerHourText, StringFormat='Kills / hour (played): {0}'}"/>
+                                   Text="{Binding KillsPerHourLineText}"/>
                         <TextBlock Classes="caption"
-                                   Text="{Binding TimeSurvivedText, StringFormat='Time survived: {0}'}"/>
+                                   Text="{Binding TimeSurvivedLineText}"/>
                     </StackPanel>
                 </Border>
 
@@ -35,7 +35,7 @@
                                    Foreground="{Binding DangerDisplayBrush}"
                                    Text="{Binding DangerDisplayText}"/>
                         <TextBlock Classes="caption"
-                                   Text="{Binding DangerIndex, StringFormat='Index: {0}/100'}"/>
+                                   Text="{Binding DangerIndexLineText}"/>
                     </StackPanel>
                 </Border>
             </Grid>
@@ -44,7 +44,7 @@
                     Padding="10">
                 <StackPanel Spacing="6">
                     <TextBlock Classes="item-title"
-                               Text="Top Issues"/>
+                               Text="{Binding TopIssuesSectionTitle}"/>
                     <ItemsControl ItemsSource="{Binding TopIssues}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
@@ -60,7 +60,7 @@
                     Padding="10">
                 <StackPanel Spacing="6">
                     <TextBlock Classes="item-title"
-                               Text="Active Moodles"/>
+                               Text="{Binding ActiveMoodlesSectionTitle}"/>
                     <ItemsControl ItemsSource="{Binding ActiveMoodles}">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
@@ -87,44 +87,44 @@
                     Padding="10">
                 <StackPanel Spacing="6">
                     <TextBlock Classes="item-title"
-                               Text="Current Vitals"/>
+                               Text="{Binding CurrentVitalsSectionTitle}"/>
                     <TextBlock Classes="caption"
-                               Text="{Binding FatigueValue, StringFormat='Müdigkeit: {0}%'}"/>
+                               Text="{Binding FatigueLineText}"/>
                     <ProgressBar Minimum="0"
                                  Maximum="100"
                                  Value="{Binding FatigueValue}"/>
                     <TextBlock Classes="caption"
-                               Text="{Binding TirednessValue, StringFormat='Erschöpfung: {0}%'}"/>
+                               Text="{Binding TirednessLineText}"/>
                     <ProgressBar Minimum="0"
                                  Maximum="100"
                                  Value="{Binding TirednessValue}"/>
                     <TextBlock Classes="caption"
-                               Text="{Binding EnduranceValue, StringFormat='Ausdauer: {0}%'}"/>
+                               Text="{Binding EnduranceLineText}"/>
                     <ProgressBar Minimum="0"
                                  Maximum="100"
                                  Value="{Binding EnduranceValue}"/>
                     <TextBlock Classes="caption"
-                               Text="{Binding HungerValue, StringFormat='Hunger: {0}%'}"/>
+                               Text="{Binding HungerLineText}"/>
                     <ProgressBar Minimum="0"
                                  Maximum="100"
                                  Value="{Binding HungerValue}"/>
                     <TextBlock Classes="caption"
-                               Text="{Binding ThirstValue, StringFormat='Durst: {0}%'}"/>
+                               Text="{Binding ThirstLineText}"/>
                     <ProgressBar Minimum="0"
                                  Maximum="100"
                                  Value="{Binding ThirstValue}"/>
                     <TextBlock Classes="caption"
-                               Text="{Binding PainValue, StringFormat='Schmerz: {0}%'}"/>
+                               Text="{Binding PainLineText}"/>
                     <ProgressBar Minimum="0"
                                  Maximum="100"
                                  Value="{Binding PainValue}"/>
                     <TextBlock Classes="caption"
-                               Text="{Binding OutOfBreathValue, StringFormat='Außer Atem: {0}%'}"/>
+                               Text="{Binding OutOfBreathLineText}"/>
                     <ProgressBar Minimum="0"
                                  Maximum="100"
                                  Value="{Binding OutOfBreathValue}"/>
                     <TextBlock Classes="caption"
-                               Text="{Binding QueasyValue, StringFormat='Übelkeit: {0}%'}"/>
+                               Text="{Binding QueasyLineText}"/>
                     <ProgressBar Minimum="0"
                                  Maximum="100"
                                  Value="{Binding QueasyValue}"/>

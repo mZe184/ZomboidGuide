@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.Data.Sqlite;
@@ -251,6 +252,148 @@ public sealed class SessionSyncService
         }
 
         return $"resolvedSave={savePath}; {diagnostics}";
+    }
+
+    public IReadOnlyList<RunAggregate> ImportRunAggregatesFromAllSaves(bool includeDeadCharacters = true)
+    {
+        var aggregates = new List<RunAggregate>();
+        var savesRoot = TryResolveSavesRootPath();
+        if (string.IsNullOrWhiteSpace(savesRoot) || !Directory.Exists(savesRoot))
+        {
+            return aggregates;
+        }
+
+        IEnumerable<string> playersDbFiles;
+        try
+        {
+            playersDbFiles = Directory.EnumerateFiles(savesRoot, "players.db", SearchOption.AllDirectories);
+        }
+        catch
+        {
+            return aggregates;
+        }
+
+        foreach (var playersDbPath in playersDbFiles)
+        {
+            var savePath = Path.GetDirectoryName(playersDbPath);
+            if (string.IsNullOrWhiteSpace(savePath))
+            {
+                continue;
+            }
+
+            if (IsExcludedSavePath(savePath))
+            {
+                continue;
+            }
+
+            var updatedUtc = File.GetLastWriteTimeUtc(playersDbPath);
+            if (updatedUtc == default)
+            {
+                updatedUtc = DateTime.UtcNow;
+            }
+
+            var inGameSurvivedHours = TryExtractInGameSurvivedHours(savePath);
+            var realPlayedHours = TryConvertInGameHoursToRealPlayedHours(savePath, inGameSurvivedHours);
+            var inGameHoursPerRealHour = inGameSurvivedHours.HasValue && realPlayedHours.HasValue && realPlayedHours.Value > 0.0
+                ? Math.Max(0.1, inGameSurvivedHours.Value / realPlayedHours.Value)
+                : 24.0;
+
+            var tempDir = string.Empty;
+            try
+            {
+                tempDir = CreatePlayersDbSnapshot(playersDbPath);
+                var snapshotPath = Path.Combine(tempDir, "players.db");
+                using var connection = new SqliteConnection($"Data Source={snapshotPath};Mode=ReadOnly;");
+                connection.Open();
+
+                var rows = new List<PlayerRow>();
+                rows.AddRange(ReadRows(connection, "localPlayers", "name"));
+                rows.AddRange(ReadRows(connection, "networkPlayers", "COALESCE(name, username)"));
+                if (!includeDeadCharacters)
+                {
+                    rows = rows.Where(row => !row.IsDead).ToList();
+                }
+
+                foreach (var row in rows.Where(entry => entry.Data.Length > 0))
+                {
+                    var tokenSet = ExtractTokens(row.Data);
+                    var normalizedTokenSet = tokenSet
+                        .Select(Normalize)
+                        .Where(value => value.Length > 0)
+                        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                    var normalizedPhraseSet = ExtractPrintablePhrases(row.Data);
+                    var inventoryItemTokens = TryExtractInventoryItemTokensFromStructuredData(row.Data, savePath, out var structuredInventoryTokens)
+                        ? structuredInventoryTokens
+                        : ExtractInventoryItemTokensFromText(tokenSet);
+                    var risk = EvaluateRisk(row, normalizedTokenSet, normalizedPhraseSet, inventoryItemTokens);
+                    var killsFromPlayerData = TryExtractZombieKills(row.Data);
+                    var killsFromGlobalModData = TryExtractZombieKillsFromGlobalModData(savePath, row.Name);
+                    var killsTotal = ResolveZombieKills(killsFromGlobalModData, killsFromPlayerData);
+
+                    var runId = BuildImportedRunId(savePath, row);
+                    var playerName = BuildImportedPlayerName(row);
+                    var timestampUtc = new DateTimeOffset(updatedUtc, TimeSpan.Zero);
+                    var dayIndex = inGameSurvivedHours.HasValue
+                        ? Math.Max(0, (int)Math.Floor(inGameSurvivedHours.Value / 24.0))
+                        : 0;
+
+                    var aggregate = new RunAggregate
+                    {
+                        Meta = new RunMeta
+                        {
+                            RunId = runId,
+                            PlayerName = playerName,
+                            SourceSavePath = savePath,
+                            CreatedUtc = timestampUtc,
+                            UpdatedUtc = timestampUtc,
+                        },
+                        SampleCount = 1,
+                        FirstSnapshotUtc = timestampUtc,
+                        LastSnapshotUtc = timestampUtc,
+                        FirstKillsTotal = killsTotal,
+                        LastKillsTotal = killsTotal,
+                        FirstInGameSurvivedHours = inGameSurvivedHours,
+                        LastInGameSurvivedHours = inGameSurvivedHours,
+                        DangerSum = Math.Clamp(risk.Score, 0, 100),
+                        FatigueSum = Math.Clamp(risk.Fatigue, 0.0, 1.0),
+                        TirednessSum = Math.Clamp(risk.Tiredness, 0.0, 1.0),
+                        EstimatedSleepHours = 0.0,
+                        InGameHoursPerRealHour = inGameHoursPerRealHour,
+                        LastObservedTimestampUtc = timestampUtc,
+                        LastObservedKillsTotal = killsTotal,
+                        LastObservedInGameSurvivedHours = inGameSurvivedHours,
+                        DailyStats =
+                        [
+                            new RunDailyStats
+                            {
+                                DayIndex = dayIndex,
+                                SampleCount = 1,
+                                DangerSum = Math.Clamp(risk.Score, 0, 100),
+                                FatigueSum = Math.Clamp(risk.Fatigue, 0.0, 1.0),
+                                TirednessSum = Math.Clamp(risk.Tiredness, 0.0, 1.0),
+                                FirstKillsTotal = killsTotal,
+                                LastKillsTotal = killsTotal,
+                                FirstSnapshotUtc = timestampUtc,
+                                LastSnapshotUtc = timestampUtc,
+                                SleepHours = 0.0,
+                            },
+                        ],
+                    };
+
+                    aggregates.Add(aggregate);
+                }
+            }
+            catch
+            {
+                // Ignore invalid/locked saves while scanning.
+            }
+            finally
+            {
+                TryDeleteDirectory(tempDir);
+            }
+        }
+
+        return aggregates;
     }
 
     public SessionSyncResult SyncFromCurrentSession(IReadOnlyCollection<GuideItem> catalogItems, bool includeRiskAssessment = false)
@@ -563,10 +706,102 @@ public sealed class SessionSyncService
         }
         catch
         {
+            return ReadRowsWithSchemaFallback(connection, table);
+        }
+
+        return rows;
+    }
+
+    private static IEnumerable<PlayerRow> ReadRowsWithSchemaFallback(SqliteConnection connection, string table)
+    {
+        var rows = new List<PlayerRow>();
+        try
+        {
+            var columns = ReadTableColumns(connection, table);
+            if (!columns.Contains("data"))
+            {
+                return rows;
+            }
+
+            var hasId = columns.Contains("id");
+            var nameExpression = columns.Contains("name") && columns.Contains("username")
+                ? "COALESCE(name, username)"
+                : columns.Contains("name")
+                    ? "name"
+                    : columns.Contains("username")
+                        ? "username"
+                        : "''";
+            var isDeadExpression = columns.Contains("isDead")
+                ? "isDead"
+                : "0";
+            var worldVersionExpression = columns.Contains("worldversion")
+                ? "worldversion"
+                : "0";
+            var idExpression = hasId
+                ? "id"
+                : "rowid";
+            var orderExpression = hasId
+                ? "id"
+                : "rowid";
+
+            using var command = connection.CreateCommand();
+            command.CommandText =
+                $"SELECT {idExpression} AS id, {nameExpression} AS playerName, data, {isDeadExpression} AS isDead, {worldVersionExpression} AS worldversion FROM {table} ORDER BY {orderExpression} DESC;";
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                var id = reader.IsDBNull(0) ? 0 : Convert.ToInt32(reader["id"], CultureInfo.InvariantCulture);
+                var name = reader.IsDBNull(1) ? string.Empty : Convert.ToString(reader["playerName"], CultureInfo.InvariantCulture) ?? string.Empty;
+                var data = reader.IsDBNull(2) ? Array.Empty<byte>() : (byte[])reader["data"];
+                var isDead = !reader.IsDBNull(3) && Convert.ToInt32(reader["isDead"], CultureInfo.InvariantCulture) != 0;
+                var worldVersion = reader.IsDBNull(4) ? 0 : Convert.ToInt32(reader["worldversion"], CultureInfo.InvariantCulture);
+
+                rows.Add(new PlayerRow
+                {
+                    Id = id,
+                    Name = name,
+                    Data = data,
+                    IsDead = isDead,
+                    WorldVersion = worldVersion,
+                });
+            }
+        }
+        catch
+        {
             return rows;
         }
 
         return rows;
+    }
+
+    private static HashSet<string> ReadTableColumns(SqliteConnection connection, string table)
+    {
+        var columns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = $"PRAGMA table_info({table});";
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                if (reader.IsDBNull(1))
+                {
+                    continue;
+                }
+
+                var name = Convert.ToString(reader["name"], CultureInfo.InvariantCulture);
+                if (!string.IsNullOrWhiteSpace(name))
+                {
+                    columns.Add(name);
+                }
+            }
+        }
+        catch
+        {
+            return columns;
+        }
+
+        return columns;
     }
 
     private static HashSet<string> MatchInventoryBooks(
@@ -2960,6 +3195,60 @@ public sealed class SessionSyncService
         {
             // Ignore cleanup errors.
         }
+    }
+
+    private static string? TryResolveSavesRootPath()
+    {
+        var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (string.IsNullOrWhiteSpace(userProfile))
+        {
+            return null;
+        }
+
+        var savesRoot = Path.Combine(userProfile, "Zomboid", "Saves");
+        return Directory.Exists(savesRoot)
+            ? savesRoot
+            : null;
+    }
+
+    private static RunId BuildImportedRunId(string savePath, PlayerRow row)
+    {
+        var identity = $"{savePath}|{row.Name}|{row.Id}|{row.IsDead}";
+        var hashBytes = SHA1.HashData(Encoding.UTF8.GetBytes(identity));
+        var token = Convert.ToHexString(hashBytes).ToLowerInvariant();
+        var shortToken = token.Length > 14 ? token[..14] : token;
+        return new RunId($"save-{shortToken}");
+    }
+
+    private static string BuildImportedPlayerName(PlayerRow row)
+    {
+        var playerName = string.IsNullOrWhiteSpace(row.Name)
+            ? "Unknown"
+            : row.Name;
+
+        var deadTag = row.IsDead ? " ☠" : string.Empty;
+        return $"{playerName}{deadTag}";
+    }
+
+    private static bool IsExcludedSavePath(string savePath)
+    {
+        if (string.IsNullOrWhiteSpace(savePath))
+        {
+            return false;
+        }
+
+        var separators = new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar };
+        var segments = savePath.Split(separators, StringSplitOptions.RemoveEmptyEntries);
+        foreach (var segment in segments)
+        {
+            if (segment.Contains("crash", StringComparison.OrdinalIgnoreCase) ||
+                segment.Contains("backup", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private sealed class ItemCodeOccurrence

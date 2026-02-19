@@ -51,7 +51,7 @@
                                     </Button>
                                     <Button Padding="8,4"
                                             Command="{Binding DismissCommand}">
-                                        <TextBlock Text="Dismiss"/>
+                                        <TextBlock Text="{Binding DismissButtonText}"/>
                                     </Button>
                                 </StackPanel>
                             </Grid>

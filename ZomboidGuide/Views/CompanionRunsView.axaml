@@ -3,28 +3,135 @@
              xmlns:vm="using:ZomboidGuide.ViewModels"
              x:Class="ZomboidGuide.Views.CompanionRunsView"
              x:DataType="vm:CompanionRunsViewModel">
-    <StackPanel Margin="8"
-                Spacing="10">
-        <TextBlock Classes="title"
-                   FontSize="22"
-                   Text="{Binding Title}"/>
-        <Border Classes="item-card"
-                Height="120"
-                Padding="10">
-            <TextBlock Classes="item-title"
-                       Text="{Binding SectionA}"/>
-        </Border>
-        <Border Classes="item-card"
-                Height="120"
-                Padding="10">
-            <TextBlock Classes="item-title"
-                       Text="{Binding SectionB}"/>
-        </Border>
-        <Border Classes="item-card"
-                Height="120"
-                Padding="10">
-            <TextBlock Classes="item-title"
-                       Text="{Binding SectionC}"/>
-        </Border>
-    </StackPanel>
+    <ScrollViewer VerticalScrollBarVisibility="Auto"
+                  HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="8"
+                    Spacing="10">
+            <TextBlock Classes="title"
+                       FontSize="22"
+                       Text="{Binding Title}"/>
+
+            <Border Classes="item-card"
+                    Padding="10">
+                <Grid ColumnDefinitions="Auto,*,12,Auto,*"
+                      RowDefinitions="Auto,Auto">
+                    <TextBlock Grid.Row="0"
+                               Grid.Column="0"
+                               VerticalAlignment="Center"
+                               Classes="caption"
+                               Text="{Binding RunALabelText}"/>
+                    <ComboBox Grid.Row="0"
+                              Grid.Column="1"
+                              Margin="8,0,0,0"
+                              ItemsSource="{Binding AvailableRuns}"
+                              SelectedItem="{Binding SelectedRunA, Mode=TwoWay}">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:RunOptionViewModel">
+                                <TextBlock Text="{Binding DisplayName}"/>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+
+                    <TextBlock Grid.Row="0"
+                               Grid.Column="3"
+                               VerticalAlignment="Center"
+                               Classes="caption"
+                               Text="{Binding RunBLabelText}"/>
+                    <ComboBox Grid.Row="0"
+                              Grid.Column="4"
+                              Margin="8,0,0,0"
+                              ItemsSource="{Binding AvailableRuns}"
+                              SelectedItem="{Binding SelectedRunB, Mode=TwoWay}">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:RunOptionViewModel">
+                                <TextBlock Text="{Binding DisplayName}"/>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+
+                    <Button Grid.Row="1"
+                            Grid.Column="4"
+                            Margin="0,8,0,0"
+                            HorizontalAlignment="Right"
+                            Command="{Binding RefreshNowCommand}">
+                        <TextBlock Text="{Binding RefreshButtonText}"/>
+                    </Button>
+                </Grid>
+            </Border>
+
+            <Border Classes="item-card"
+                    Padding="10">
+                <Grid RowDefinitions="Auto,Auto,*">
+                    <Grid ColumnDefinitions="2*,*,*,*"
+                          Margin="0,0,0,6">
+                        <TextBlock Grid.Column="0"
+                                   Classes="item-title"
+                                   Text="{Binding MetricHeaderText}"/>
+                        <TextBlock Grid.Column="1"
+                                   Classes="item-title"
+                                   Text="{Binding RunAHeaderText}"/>
+                        <TextBlock Grid.Column="2"
+                                   Classes="item-title"
+                                   Text="{Binding RunBHeaderText}"/>
+                        <TextBlock Grid.Column="3"
+                                   Classes="item-title"
+                                   Text="{Binding DeltaHeaderText}"/>
+                    </Grid>
+
+                    <Border Grid.Row="1"
+                            BorderThickness="0,1,0,0"
+                            BorderBrush="#22FFFFFF"
+                            Padding="0,6,0,6">
+                        <Grid ColumnDefinitions="2*,*,*,*">
+                            <TextBlock Grid.Column="0"
+                                       Classes="caption"
+                                       Text="{Binding SaveMetricText}"/>
+                            <TextBlock Grid.Column="1"
+                                       Classes="caption"
+                                       Text="{Binding RunASaveName}"/>
+                            <TextBlock Grid.Column="2"
+                                       Classes="caption"
+                                       Text="{Binding RunBSaveName}"/>
+                            <TextBlock Grid.Column="3"
+                                       Classes="caption"
+                                       Text="{Binding SaveDeltaText}"/>
+                        </Grid>
+                    </Border>
+
+                    <ItemsControl Grid.Row="2"
+                                  ItemsSource="{Binding ComparisonRows}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:RunComparisonRowViewModel">
+                                <Border BorderThickness="0,1,0,0"
+                                        BorderBrush="#22FFFFFF"
+                                        Padding="0,6,0,6">
+                                    <Grid ColumnDefinitions="2*,*,*,*">
+                                        <TextBlock Grid.Column="0"
+                                                   Classes="caption"
+                                                   Text="{Binding MetricText}"/>
+                                        <TextBlock Grid.Column="1"
+                                                   Classes="caption"
+                                                   Text="{Binding RunAText}"/>
+                                        <TextBlock Grid.Column="2"
+                                                   Classes="caption"
+                                                   Text="{Binding RunBText}"/>
+                                        <TextBlock Grid.Column="3"
+                                                   Classes="caption"
+                                                   Text="{Binding DeltaText}"/>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <TextBlock Grid.Row="2"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               Classes="caption"
+                               IsVisible="{Binding ShowNoData}"
+                               Text="{Binding NoDataText}"/>
+                </Grid>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
 </UserControl>

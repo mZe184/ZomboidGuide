@@ -69,6 +69,8 @@ public sealed record OverlayStatePayload
 
     public IReadOnlyList<string> Moodles { get; init; } = Array.Empty<string>();
 
+    public bool RotateSlides { get; init; } = true;
+
     public string SleepAction { get; init; } = "KEEP_GOING";
 
     public double SleepConfidence { get; init; }

@@ -12,6 +12,7 @@ public sealed class OverlayStateProvider
     private readonly TodoEngine _todoEngine;
     private readonly UiLocalizationService? _uiLocalizationService;
     private readonly Func<string>? _languageCodeProvider;
+    private readonly Func<bool>? _rotateSlidesProvider;
 
     public OverlayStateProvider(
         LiveStateStore liveStateStore,
@@ -19,7 +20,8 @@ public sealed class OverlayStateProvider
         SleepOptimizer sleepOptimizer,
         TodoEngine todoEngine,
         UiLocalizationService? uiLocalizationService = null,
-        Func<string>? languageCodeProvider = null)
+        Func<string>? languageCodeProvider = null,
+        Func<bool>? rotateSlidesProvider = null)
     {
         _liveStateStore = liveStateStore;
         _statsEngine = statsEngine;
@@ -27,6 +29,7 @@ public sealed class OverlayStateProvider
         _todoEngine = todoEngine;
         _uiLocalizationService = uiLocalizationService;
         _languageCodeProvider = languageCodeProvider;
+        _rotateSlidesProvider = rotateSlidesProvider;
     }
 
     public OverlayStatePayload GetState()
@@ -81,6 +84,7 @@ public sealed class OverlayStateProvider
             Moodles = latest?.Moodles
                 .Where(moodle => !string.IsNullOrWhiteSpace(moodle))
                 .ToArray() ?? Array.Empty<string>(),
+            RotateSlides = _rotateSlidesProvider?.Invoke() ?? true,
             SleepAction = ToApiAction(sleep.Action),
             SleepConfidence = Clamp01(sleep.Confidence),
             TopTodos = todos.Select(todo => todo.Title).ToList(),
