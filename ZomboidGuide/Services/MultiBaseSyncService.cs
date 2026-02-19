@@ -119,7 +119,7 @@ public sealed class MultiBaseSyncService
         }
     }
 
-    public MultiBaseIngestResult IngestScanJson(string payloadJson)
+    public MultiBaseIngestResult IngestScanJson(string payloadJson, string? runKeyOverride = null)
     {
         MultiBaseScanPayload? payload;
         try
@@ -147,7 +147,11 @@ public sealed class MultiBaseSyncService
             return new MultiBaseIngestResult(false, "playerInventoryItems is required for reliable comparison.");
         }
 
-        var runKey = ResolveRunKey(payload);
+        var runKey = runKeyOverride?.Trim() ?? string.Empty;
+        if (runKey.Length == 0)
+        {
+            runKey = ResolveRunKey(payload);
+        }
         var baseName = payload.BaseName?.Trim();
         if (string.IsNullOrWhiteSpace(baseName))
         {
@@ -310,14 +314,13 @@ public sealed class MultiBaseSyncService
     {
         lock (_sync)
         {
+            _ = playerName;
             var runGroups = _basesByRunAndId.Values
                 .Where(entry => !string.IsNullOrWhiteSpace(entry.RunKey))
                 .GroupBy(entry => entry.RunKey, StringComparer.OrdinalIgnoreCase)
                 .Select(group => new
                 {
                     RunKey = group.Key,
-                    Bases = group.ToList(),
-                    LastSeenUtc = group.Max(entry => entry.LastSeenUtc),
                 })
                 .ToList();
             if (runGroups.Count == 0)
@@ -327,9 +330,6 @@ public sealed class MultiBaseSyncService
 
             var mode = ExtractModeFromSavePath(savePath);
             var saveName = ExtractSaveNameFromSavePath(savePath);
-            var normalizedMode = NormalizeToken(mode);
-            var normalizedSaveName = NormalizeToken(saveName);
-            var normalizedPlayer = NormalizeToken(playerName ?? string.Empty);
 
             var exactCandidates = new List<string>();
             if (mode.Length > 0 && saveName.Length > 0)
@@ -351,29 +351,9 @@ public sealed class MultiBaseSyncService
                 return true;
             }
 
-            var bestMatch = runGroups
-                .Select(group => new
-                {
-                    group.RunKey,
-                    group.LastSeenUtc,
-                    Score = CalculateRunScore(
-                        group.RunKey,
-                        group.Bases,
-                        normalizedMode,
-                        normalizedSaveName,
-                        normalizedPlayer),
-                })
-                .Where(entry => entry.Score > 0)
-                .OrderByDescending(entry => entry.Score)
-                .ThenByDescending(entry => entry.LastSeenUtc)
-                .FirstOrDefault();
-            if (bestMatch is null)
-            {
-                return false;
-            }
-
-            ActivateRun(bestMatch.RunKey);
-            return true;
+            var fallbackRunKey = BuildFallbackRunKey(mode, saveName);
+            ActivateRun(fallbackRunKey);
+            return false;
         }
     }
 
@@ -577,73 +557,6 @@ public sealed class MultiBaseSyncService
             .Max();
     }
 
-    private static int CalculateRunScore(
-        string runKey,
-        IReadOnlyCollection<TrackedBaseState> bases,
-        string normalizedMode,
-        string normalizedSaveName,
-        string normalizedPlayer)
-    {
-        var score = 0;
-        var (runPrefix, runSuffix) = SplitRunKey(runKey);
-        var normalizedRunPrefix = NormalizeToken(runPrefix);
-        var normalizedRunSuffix = NormalizeToken(runSuffix);
-        var normalizedRunKey = NormalizeToken(runKey);
-
-        if (normalizedMode.Length > 0)
-        {
-            if (normalizedRunPrefix.Equals(normalizedMode, StringComparison.OrdinalIgnoreCase))
-            {
-                score += 35;
-            }
-
-            if (bases.Any(entry => NormalizeToken(entry.SaveId).Equals(normalizedMode, StringComparison.OrdinalIgnoreCase)))
-            {
-                score += 25;
-            }
-        }
-
-        if (normalizedSaveName.Length > 0)
-        {
-            if (normalizedRunSuffix.Equals(normalizedSaveName, StringComparison.OrdinalIgnoreCase))
-            {
-                score += 50;
-            }
-            else if (normalizedRunKey.Contains(normalizedSaveName, StringComparison.OrdinalIgnoreCase))
-            {
-                score += 20;
-            }
-        }
-
-        if (normalizedPlayer.Length > 0 &&
-            bases.Any(entry => NormalizeToken(entry.PlayerName).Equals(normalizedPlayer, StringComparison.OrdinalIgnoreCase)))
-        {
-            score += 15;
-        }
-
-        return score;
-    }
-
-    private static (string Prefix, string Suffix) SplitRunKey(string runKey)
-    {
-        if (string.IsNullOrWhiteSpace(runKey))
-        {
-            return (string.Empty, string.Empty);
-        }
-
-        var separator = runKey.IndexOf("::", StringComparison.Ordinal);
-        if (separator < 0)
-        {
-            return (runKey, string.Empty);
-        }
-
-        var prefix = runKey[..separator];
-        var suffix = separator + 2 >= runKey.Length
-            ? string.Empty
-            : runKey[(separator + 2)..];
-        return (prefix, suffix);
-    }
-
     private static string ExtractModeFromSavePath(string savePath)
     {
         if (string.IsNullOrWhiteSpace(savePath))
@@ -679,6 +592,28 @@ public sealed class MultiBaseSyncService
         {
             return string.Empty;
         }
+    }
+
+    private static string BuildFallbackRunKey(string mode, string saveName)
+    {
+        var trimmedMode = mode?.Trim() ?? string.Empty;
+        var trimmedSaveName = saveName?.Trim() ?? string.Empty;
+        if (trimmedMode.Length > 0 && trimmedSaveName.Length > 0)
+        {
+            return $"{trimmedMode}::{trimmedSaveName}";
+        }
+
+        if (trimmedSaveName.Length > 0)
+        {
+            return trimmedSaveName;
+        }
+
+        if (trimmedMode.Length > 0)
+        {
+            return trimmedMode;
+        }
+
+        return string.Empty;
     }
 
     private static string ResolveRunKey(MultiBaseScanPayload payload)

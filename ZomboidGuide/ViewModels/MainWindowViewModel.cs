@@ -1155,6 +1155,7 @@ public partial class MainWindowViewModel : ViewModelBase
             var result = await Task.Run(() => _sessionSyncService.SyncFromCurrentSession(_catalogItems, includeRiskAssessment: true));
             if (!result.Success)
             {
+                TryClearBasesForEmptyDisconnectedRun();
                 if (RiskIndicatorEnabled)
                 {
                     RiskLevel = SessionRiskLevel.Unknown;
@@ -1174,6 +1175,7 @@ public partial class MainWindowViewModel : ViewModelBase
             }
 
             _multiBaseSyncService.TryActivateRunForSession(result.SavePath, result.PlayerName);
+            TryClearBasesForEmptyDisconnectedRun(result.SavePath);
             var multiBaseMatch = _multiBaseSyncService.BuildCatalogMatch(_catalogItems);
             var inventoryBookIds = result.CheckedBookItemIds
                 .Concat(multiBaseMatch.InventoryBookItemIds)
@@ -2833,7 +2835,7 @@ public partial class MainWindowViewModel : ViewModelBase
             };
         }
 
-        var result = _multiBaseSyncService.IngestScanJson(request.Body);
+        var result = _multiBaseSyncService.IngestScanJson(request.Body, ResolveCurrentSessionMultiBaseRunKey());
         _ = Dispatcher.UIThread.InvokeAsync(async () =>
         {
             RefreshMultiBaseConnectionUi(DateTimeOffset.UtcNow);
@@ -3035,7 +3037,7 @@ public partial class MainWindowViewModel : ViewModelBase
                 continue;
             }
 
-            var result = _multiBaseSyncService.IngestScanJson(line);
+            var result = _multiBaseSyncService.IngestScanJson(line, ResolveCurrentSessionMultiBaseRunKey());
             if (!result.Success)
             {
                 continue;
@@ -3165,10 +3167,101 @@ public partial class MainWindowViewModel : ViewModelBase
         }
     }
 
+    private string ResolveCurrentSessionMultiBaseRunKey()
+    {
+        var savePath = _sessionSyncService.TryResolveActiveSavePathForCurrentSession();
+        if (string.IsNullOrWhiteSpace(savePath))
+        {
+            return string.Empty;
+        }
+
+        return BuildRunKeyFromSavePath(savePath);
+    }
+
+    private static string BuildRunKeyFromSavePath(string savePath)
+    {
+        if (string.IsNullOrWhiteSpace(savePath))
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            var saveName = Path.GetFileName(savePath)?.Trim() ?? string.Empty;
+            var mode = Path.GetFileName(Path.GetDirectoryName(savePath))?.Trim() ?? string.Empty;
+
+            if (mode.Length > 0 && saveName.Length > 0)
+            {
+                return $"{mode}::{saveName}";
+            }
+
+            return saveName.Length > 0
+                ? saveName
+                : mode;
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    private bool IsMultiBaseConnectionFresh()
+    {
+        if (_lastMultiBasePostUtc == DateTimeOffset.MinValue)
+        {
+            return false;
+        }
+
+        return DateTimeOffset.UtcNow - _lastMultiBasePostUtc <= TimeSpan.FromSeconds(12);
+    }
+
+    private void TryClearBasesForEmptyDisconnectedRun(string? sessionSavePath = null)
+    {
+        if (IsMultiBaseConnectionFresh())
+        {
+            return;
+        }
+
+        sessionSavePath ??= _sessionSyncService.TryResolveActiveSavePathForCurrentSession();
+        if (string.IsNullOrWhiteSpace(sessionSavePath))
+        {
+            return;
+        }
+
+        var previousSnapshot = _multiBaseSyncService.GetStateSnapshot();
+        _multiBaseSyncService.TryActivateRunForSession(sessionSavePath, string.Empty);
+        var currentSnapshot = _multiBaseSyncService.GetStateSnapshot();
+        if (currentSnapshot.Bases.Count > 0)
+        {
+            return;
+        }
+
+        var runChanged = !string.Equals(
+            previousSnapshot.RunKey,
+            currentSnapshot.RunKey,
+            StringComparison.OrdinalIgnoreCase);
+        var hadVisibleData = previousSnapshot.Bases.Count > 0 ||
+                             previousSnapshot.InventoryItemTokenCount > 0 ||
+                             previousSnapshot.LastSnapshotUtc != DateTimeOffset.MinValue;
+        if (!runChanged && !hadVisibleData)
+        {
+            return;
+        }
+
+        if (currentSnapshot.InventoryItemTokenCount > 0 || currentSnapshot.LastSnapshotUtc != DateTimeOffset.MinValue)
+        {
+            _multiBaseSyncService.ClearActiveRun();
+        }
+
+        RefreshTrackedBasesUi();
+        _ = SaveStateAsync();
+    }
+
     private async void SessionTimerOnTick(object? sender, EventArgs eventArgs)
     {
         IngestQueuedMultiBaseSnapshots();
         RefreshMultiBaseConnectionUi();
+        TryClearBasesForEmptyDisconnectedRun();
 
         if (IsBusy || _catalogItems.Count == 0)
         {
