@@ -99,9 +99,19 @@ jobs:
             throw "No installer executable was created."
           }
 
+          ./deployment/Build-MultiBaseModZip.ps1 -OutputDir $releaseDir -Version "${env:APP_VERSION}"
+
+          $modZipFiles = Get-ChildItem -Path $releaseDir -Filter "ZomboidGuideCompanionMod-*.zip" -File
+          if ($null -eq $modZipFiles -or $modZipFiles.Count -eq 0) {
+            throw "No mod zip was created."
+          }
+
           $hashLines = @()
           foreach ($installer in $installerFiles) {
             $hashLines += ("{0}  {1}" -f (Get-FileHash $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $installer.Name)
+          }
+          foreach ($zip in $modZipFiles) {
+            $hashLines += ("{0}  {1}" -f (Get-FileHash $zip.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $zip.Name)
           }
 
           $hashLines | Set-Content -Path (Join-Path $releaseDir "SHA256SUMS.txt") -Encoding utf8
@@ -115,6 +125,7 @@ jobs:
           generate_release_notes: true
           files: |
             artifacts/release/*.exe
+            artifacts/release/ZomboidGuideCompanionMod-*.zip
             artifacts/release/SHA256SUMS.txt
 
   discord:

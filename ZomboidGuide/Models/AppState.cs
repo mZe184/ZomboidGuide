@@ -50,4 +50,12 @@ public sealed class AppState
     public List<string> KnownCatalogItemIds { get; set; } = [];
 
     public int InventoryDetectionVersion { get; set; }
+
+    public List<TrackedBaseState> TrackedBases { get; set; } = [];
+
+    public List<string> MultiBaseInventoryFullTypes { get; set; } = [];
+
+    public string MultiBaseActiveRunKey { get; set; } = string.Empty;
+
+    public DateTimeOffset? LastMultiBaseSnapshotAt { get; set; }
 }

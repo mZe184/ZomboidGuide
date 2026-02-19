@@ -34,15 +34,20 @@ public sealed class LocalHttpServer : IDisposable
 
     private readonly OverlayStateProvider _stateProvider;
     private readonly Func<string>? _gamePathProvider;
+    private readonly Func<ApiRequest, ApiResponse?>? _apiRequestHandler;
     private readonly object _sync = new();
     private TcpListener? _listener;
     private CancellationTokenSource? _cts;
     private Task? _acceptLoop;
 
-    public LocalHttpServer(OverlayStateProvider stateProvider, Func<string>? gamePathProvider = null)
+    public LocalHttpServer(
+        OverlayStateProvider stateProvider,
+        Func<string>? gamePathProvider = null,
+        Func<ApiRequest, ApiResponse?>? apiRequestHandler = null)
     {
         _stateProvider = stateProvider;
         _gamePathProvider = gamePathProvider;
+        _apiRequestHandler = apiRequestHandler;
     }
 
     public bool IsRunning
@@ -418,9 +423,9 @@ public sealed class LocalHttpServer : IDisposable
             try
             {
                 using var stream = client.GetStream();
-                var requestLine = await ReadRequestLineAsync(stream, cancellationToken).ConfigureAwait(false);
-                var method = ExtractMethod(requestLine);
-                var path = ExtractPath(requestLine);
+                var request = await ReadRequestAsync(stream, cancellationToken).ConfigureAwait(false);
+                var method = request.Method;
+                var path = request.Path;
 
                 if (path.Equals("/api/state", StringComparison.OrdinalIgnoreCase))
                 {
@@ -501,6 +506,51 @@ public sealed class LocalHttpServer : IDisposable
                     return;
                 }
 
+                if (path.StartsWith("/api/", StringComparison.OrdinalIgnoreCase) && _apiRequestHandler is not null)
+                {
+                    ApiResponse? response = null;
+                    try
+                    {
+                        response = _apiRequestHandler(request);
+                    }
+                    catch
+                    {
+                        response = new ApiResponse
+                        {
+                            StatusCode = 500,
+                            ReasonPhrase = "Internal Server Error",
+                            ContentType = "application/json; charset=utf-8",
+                            Body = "{\"ok\":false,\"message\":\"handler_error\"}",
+                        };
+                    }
+
+                    if (response is not null)
+                    {
+                        if (response.BodyBytes.Length > 0)
+                        {
+                            await WriteBinaryResponseAsync(
+                                stream,
+                                response.StatusCode,
+                                response.ReasonPhrase,
+                                response.ContentType,
+                                response.BodyBytes,
+                                cancellationToken).ConfigureAwait(false);
+                        }
+                        else
+                        {
+                            await WriteResponseAsync(
+                                stream,
+                                response.StatusCode,
+                                response.ReasonPhrase,
+                                response.ContentType,
+                                response.Body,
+                                cancellationToken).ConfigureAwait(false);
+                        }
+
+                        return;
+                    }
+                }
+
                 await WriteResponseAsync(stream, 404, "Not Found", "text/plain; charset=utf-8", "Not found.", cancellationToken).ConfigureAwait(false);
             }
             catch
@@ -510,32 +560,114 @@ public sealed class LocalHttpServer : IDisposable
         }
     }
 
-    private static async Task<string> ReadRequestLineAsync(NetworkStream stream, CancellationToken cancellationToken)
+    private static async Task<ApiRequest> ReadRequestAsync(NetworkStream stream, CancellationToken cancellationToken)
     {
-        var buffer = new byte[4096];
-        await using var memory = new MemoryStream();
-        while (memory.Length < 8192)
+        var headerBytes = new List<byte>(1024);
+        var oneByteBuffer = new byte[1];
+
+        while (headerBytes.Count < 64 * 1024)
         {
-            var read = await stream.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken).ConfigureAwait(false);
+            var read = await stream.ReadAsync(oneByteBuffer.AsMemory(0, 1), cancellationToken).ConfigureAwait(false);
             if (read <= 0)
             {
                 break;
             }
 
-            memory.Write(buffer, 0, read);
-            var text = Encoding.ASCII.GetString(memory.GetBuffer(), 0, (int)memory.Length);
-            var headerEnd = text.IndexOf("\r\n\r\n", StringComparison.Ordinal);
-            if (headerEnd >= 0)
+            headerBytes.Add(oneByteBuffer[0]);
+            var count = headerBytes.Count;
+            if (count >= 4 &&
+                headerBytes[count - 4] == (byte)'\r' &&
+                headerBytes[count - 3] == (byte)'\n' &&
+                headerBytes[count - 2] == (byte)'\r' &&
+                headerBytes[count - 1] == (byte)'\n')
             {
                 break;
             }
         }
 
-        var requestText = Encoding.ASCII.GetString(memory.ToArray());
-        var requestLineEnd = requestText.IndexOf("\r\n", StringComparison.Ordinal);
-        return requestLineEnd > 0
-            ? requestText[..requestLineEnd]
-            : requestText;
+        var headerText = Encoding.ASCII.GetString(headerBytes.ToArray());
+        var requestLineEnd = headerText.IndexOf("\r\n", StringComparison.Ordinal);
+        var requestLine = requestLineEnd > 0 ? headerText[..requestLineEnd] : headerText;
+        var method = ExtractMethod(requestLine);
+        var path = ExtractPath(requestLine);
+
+        var headers = ParseHeaders(headerText);
+        var contentLength = 0;
+        if (headers.TryGetValue("Content-Length", out var rawContentLength) &&
+            int.TryParse(rawContentLength, out var parsedContentLength) &&
+            parsedContentLength > 0)
+        {
+            contentLength = Math.Min(parsedContentLength, 2 * 1024 * 1024);
+        }
+
+        var bodyBytes = contentLength > 0
+            ? await ReadBodyAsync(stream, contentLength, cancellationToken).ConfigureAwait(false)
+            : Array.Empty<byte>();
+
+        var body = bodyBytes.Length == 0 ? string.Empty : Encoding.UTF8.GetString(bodyBytes);
+        return new ApiRequest
+        {
+            Method = method,
+            Path = path,
+            Headers = headers,
+            Body = body,
+            BodyBytes = bodyBytes,
+        };
+    }
+
+    private static Dictionary<string, string> ParseHeaders(string headerText)
+    {
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var lines = headerText.Split("\r\n", StringSplitOptions.None);
+        foreach (var line in lines.Skip(1))
+        {
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                break;
+            }
+
+            var separator = line.IndexOf(':');
+            if (separator <= 0 || separator >= line.Length - 1)
+            {
+                continue;
+            }
+
+            var key = line[..separator].Trim();
+            var value = line[(separator + 1)..].Trim();
+            if (key.Length > 0)
+            {
+                headers[key] = value;
+            }
+        }
+
+        return headers;
+    }
+
+    private static async Task<byte[]> ReadBodyAsync(NetworkStream stream, int contentLength, CancellationToken cancellationToken)
+    {
+        var buffer = new byte[contentLength];
+        var totalRead = 0;
+        while (totalRead < contentLength)
+        {
+            var read = await stream.ReadAsync(
+                buffer.AsMemory(totalRead, contentLength - totalRead),
+                cancellationToken).ConfigureAwait(false);
+            if (read <= 0)
+            {
+                break;
+            }
+
+            totalRead += read;
+        }
+
+        if (totalRead == contentLength)
+        {
+            return buffer;
+        }
+
+        var truncated = new byte[totalRead];
+        Array.Copy(buffer, 0, truncated, 0, totalRead);
+        return truncated;
     }
 
     private static string ExtractPath(string requestLine)
@@ -631,6 +763,33 @@ public sealed class LocalHttpServer : IDisposable
         public int ProcessId { get; init; }
 
         public int Port { get; init; }
+    }
+
+    public sealed class ApiRequest
+    {
+        public string Method { get; init; } = "GET";
+
+        public string Path { get; init; } = "/";
+
+        public IReadOnlyDictionary<string, string> Headers { get; init; } =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        public string Body { get; init; } = string.Empty;
+
+        public byte[] BodyBytes { get; init; } = Array.Empty<byte>();
+    }
+
+    public sealed class ApiResponse
+    {
+        public int StatusCode { get; init; } = 200;
+
+        public string ReasonPhrase { get; init; } = "OK";
+
+        public string ContentType { get; init; } = "application/json; charset=utf-8";
+
+        public string Body { get; init; } = "{\"ok\":true}";
+
+        public byte[] BodyBytes { get; init; } = Array.Empty<byte>();
     }
 
     private const string OverlayHtml = """

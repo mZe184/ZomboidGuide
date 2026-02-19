@@ -1,0 +1,8 @@
+id=ZomboidGuideCompanion
+name=ZomboidGuide Companion
+description=Live multi-base snapshots (inventory + base loot + structures) for ZomboidGuide desktop app.
+poster=poster.png
+modVersion=0.1.0
+authors=ZomboidGuide
+tags=Interface
+url=https://github.com/mZe184/ZomboidGuide

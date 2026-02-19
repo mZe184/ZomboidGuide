@@ -10,6 +10,7 @@ public sealed partial class ChecklistItemViewModel : ViewModelBase
     private static readonly IBrush UncheckedAccentBrush = Brush.Parse("#4A5337");
     private static readonly IBrush NeutralBadgeBrush = Brush.Parse("#3A4330");
     private static readonly IBrush InventoryBadgeBrush = Brush.Parse("#516936");
+    private static readonly IBrush BaseBadgeBrush = Brush.Parse("#36556E");
     private static readonly IBrush HistoricalInventoryBadgeBrush = Brush.Parse("#4C5840");
     private static readonly IBrush ReadBadgeBrush = Brush.Parse("#2E5A3B");
     private static readonly IBrush ObsoleteBadgeBrush = Brush.Parse("#5C4332");
@@ -123,6 +124,14 @@ public sealed partial class ChecklistItemViewModel : ViewModelBase
                     : "Seen";
             }
 
+            if (SessionState.StartsWith("In Base", System.StringComparison.OrdinalIgnoreCase) ||
+                SessionState.StartsWith("In Basis", System.StringComparison.OrdinalIgnoreCase))
+            {
+                return SessionState.StartsWith("In Basis", System.StringComparison.OrdinalIgnoreCase)
+                    ? "Basis"
+                    : "Base";
+            }
+
             if (SessionState.StartsWith("No Longer Needed", System.StringComparison.OrdinalIgnoreCase) ||
                 SessionState.StartsWith("Nicht mehr benötigt", System.StringComparison.OrdinalIgnoreCase))
             {
@@ -170,6 +179,12 @@ public sealed partial class ChecklistItemViewModel : ViewModelBase
                 SessionState.StartsWith("Befand sich mal im Inventar", System.StringComparison.OrdinalIgnoreCase))
             {
                 return HistoricalInventoryBadgeBrush;
+            }
+
+            if (SessionState.StartsWith("In Base", System.StringComparison.OrdinalIgnoreCase) ||
+                SessionState.StartsWith("In Basis", System.StringComparison.OrdinalIgnoreCase))
+            {
+                return BaseBadgeBrush;
             }
 
             if (SessionState.StartsWith("No Longer Needed", System.StringComparison.OrdinalIgnoreCase) ||

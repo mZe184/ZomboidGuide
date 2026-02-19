@@ -7,6 +7,8 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -28,6 +30,14 @@ public partial class MainWindowViewModel : ViewModelBase
     private static readonly IBrush RiskCautionBrush = Brush.Parse("#6E6A2B");
     private static readonly IBrush RiskRiskyBrush = Brush.Parse("#9A5B2A");
     private static readonly IBrush RiskCriticalBrush = Brush.Parse("#7A2E2E");
+    private static readonly IBrush MultiBaseConnectedBrush = Brush.Parse("#2F5A3E");
+    private static readonly IBrush MultiBaseDisconnectedBrush = Brush.Parse("#7A2E2E");
+    private static readonly string[] MultiBaseQueueRelativePaths =
+    [
+        "Lua\\ZomboidGuideCompanion\\snapshots.ndjson",
+        "ZomboidGuideCompanion\\snapshots.ndjson",
+    ];
+    private const long MultiBaseQueueCompactThresholdBytes = 512 * 1024;
 
     private readonly AppStateService _appStateService = new();
     private readonly GuideCatalogService _guideCatalogService = new();
@@ -41,6 +51,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private readonly TodoStateStore _todoStateStore = new();
     private readonly RunRepository _runRepository = new();
     private readonly RunComparisonService _runComparisonService = new();
+    private readonly MultiBaseSyncService _multiBaseSyncService = new();
     private readonly OverlayStateProvider _overlayStateProvider;
     private readonly LocalHttpServer _localOverlayServer;
 
@@ -76,6 +87,12 @@ public partial class MainWindowViewModel : ViewModelBase
     private DateTimeOffset _lastLiveTelemetrySyncAt = DateTimeOffset.MinValue;
     private SessionRiskLevel _lastRiskLevelForSound = SessionRiskLevel.Unknown;
     private bool _riskSoundInitialized;
+    private bool _pendingMultiBaseRefresh;
+    private DateTimeOffset _lastMultiBasePostUtc = DateTimeOffset.MinValue;
+    private string _multiBaseQueuePath = string.Empty;
+    private long _multiBaseQueueReadOffset;
+    private string _multiBaseQueueRemainder = string.Empty;
+    private DateTime _multiBaseQueueLastWriteUtc = DateTime.MinValue;
 
     [ObservableProperty]
     private ObservableCollection<BookCategoryGroupViewModel> filteredBookGroups = [];
@@ -196,6 +213,45 @@ public partial class MainWindowViewModel : ViewModelBase
 
     [ObservableProperty]
     private bool isSettingsVisible;
+
+    [ObservableProperty]
+    private ObservableCollection<TrackedBaseOptionViewModel> trackedBases = [];
+
+    [ObservableProperty]
+    private TrackedBaseOptionViewModel? selectedTrackedBase;
+
+    [ObservableProperty]
+    private string selectedTrackedBaseName = string.Empty;
+
+    [ObservableProperty]
+    private string multiBaseStatusText = string.Empty;
+
+    [ObservableProperty]
+    private string multiBaseApiUrlText = string.Empty;
+
+    [ObservableProperty]
+    private bool multiBaseConnected;
+
+    [ObservableProperty]
+    private string multiBaseConnectionText = string.Empty;
+
+    [ObservableProperty]
+    private string multiBaseLastPostText = string.Empty;
+
+    [ObservableProperty]
+    private ObservableCollection<ChecklistItemViewModel> selectedBaseBooks = [];
+
+    [ObservableProperty]
+    private ObservableCollection<ChecklistItemViewModel> selectedBaseMagazines = [];
+
+    [ObservableProperty]
+    private ObservableCollection<ChecklistItemViewModel> selectedBaseRecipes = [];
+
+    [ObservableProperty]
+    private ObservableCollection<string> selectedBaseStructures = [];
+
+    [ObservableProperty]
+    private string selectedBaseSummaryText = string.Empty;
 
     public string WindowTitleText => L("MietzeMatze's Zomboid Guide", "MietzeMatze's Zomboid Guide");
 
@@ -332,6 +388,8 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public string RecipesTabHeader => $"{L("Recipes", "Rezepte")} ({RecipeProgress})";
 
+    public string BasesTabHeaderText => L("Bases", "Basen");
+
     public string TodoTabHeader => $"{L("ToDo", "ToDo")} ({TodoProgress})";
 
     public string TodoSubtitleText => L(
@@ -351,6 +409,40 @@ public partial class MainWindowViewModel : ViewModelBase
     public string MagazineFilterLabelText => L("Magazines Filter", "Magazine-Filter");
 
     public string RecipeFilterLabelText => L("Recipes Filter", "Rezepte-Filter");
+
+    public string BaseSelectLabelText => L("Select Base", "Basis auswählen");
+
+    public string BaseSummaryLabelText => L("Base Summary", "Basisübersicht");
+
+    public string BaseStructuresLabelText => L("Built Structures", "Gebaute Strukturen");
+
+    public string BaseBooksLabelText => L("Books In Base", "Bücher in Basis");
+
+    public string BaseMagazinesLabelText => L("Magazines In Base", "Magazine in Basis");
+
+    public string BaseRecipesLabelText => L("Recipes In Base", "Rezepte in Basis");
+
+    public string MultiBaseSectionTitleText => L("Multi-Base Live Scan", "Multi-Base-Live-Scan");
+
+    public string MultiBaseApiUrlLabelText => L("Mod API URL", "Mod-API-URL");
+
+    public string MultiBaseStatusLabelText => L("Snapshot Status", "Snapshot-Status");
+
+    public string MultiBaseBasesLabelText => L("Tracked Bases", "Erfasste Basen");
+
+    public string MultiBaseBaseNameLabelText => L("Base Name", "Basisname");
+
+    public string MultiBaseConnectionLabelText => L("Mod Connection", "Mod-Verbindung");
+
+    public string MultiBaseLastPostLabelText => L("Last POST", "Letzter POST");
+
+    public string MultiBaseRenameButtonText => L("Rename Base", "Basis umbenennen");
+
+    public string MultiBaseClearButtonText => L("Clear Active Run Bases", "Basen im aktiven Run löschen");
+
+    public IBrush MultiBaseConnectionBadgeBrush => MultiBaseConnected
+        ? MultiBaseConnectedBrush
+        : MultiBaseDisconnectedBrush;
 
     public string CompanionTabHeaderText => L("Companion", "Companion");
 
@@ -380,7 +472,10 @@ public partial class MainWindowViewModel : ViewModelBase
             _uiLocalizationService,
             () => _state.LanguageCode ?? string.Empty,
             () => _state.OverlayRotateSlides);
-        _localOverlayServer = new LocalHttpServer(_overlayStateProvider, () => _state.GamePath ?? string.Empty);
+        _localOverlayServer = new LocalHttpServer(
+            _overlayStateProvider,
+            () => _state.GamePath ?? string.Empty,
+            HandleServerApiRequest);
 
         CompanionSurvivalPage = new CompanionSurvivalViewModel(
             _liveStateStore,
@@ -431,6 +526,12 @@ public partial class MainWindowViewModel : ViewModelBase
         RiskLevel = SessionRiskLevel.Unknown;
         RiskScore = 0;
         RiskNotes = string.Empty;
+        MultiBaseStatusText = L("No base snapshots yet.", "Noch keine Basis-Snapshots.");
+        MultiBaseApiUrlText = BuildMultiBaseApiUrl();
+        MultiBaseConnected = false;
+        MultiBaseConnectionText = L("Disconnected", "Getrennt");
+        MultiBaseLastPostText = L("No mod POST yet.", "Noch kein Mod-POST.");
+        SelectedBaseSummaryText = L("No base selected.", "Keine Basis ausgewählt.");
     }
 
     partial void OnSearchTextChanged(string value)
@@ -595,6 +696,17 @@ public partial class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(TodoTabHeader));
     }
 
+    partial void OnMultiBaseConnectedChanged(bool value)
+    {
+        OnPropertyChanged(nameof(MultiBaseConnectionBadgeBrush));
+    }
+
+    partial void OnSelectedTrackedBaseChanged(TrackedBaseOptionViewModel? value)
+    {
+        SelectedTrackedBaseName = value?.BaseName ?? string.Empty;
+        RefreshSelectedBaseDetails();
+    }
+
     [RelayCommand]
     private async Task RefreshFromGameAsync()
     {
@@ -623,6 +735,7 @@ public partial class MainWindowViewModel : ViewModelBase
             : $"gamePath={GamePath}; exists={Directory.Exists(GamePath)}; mediaExists={Directory.Exists(Path.Combine(GamePath, "media"))}";
         var autoDetectDiagnostics = _guideCatalogService.GetAutoDetectGamePathDiagnostics();
         var activeSaveDiagnostics = _sessionSyncService.BuildActiveSaveDiagnostics();
+        var multiBaseDiagnostics = _multiBaseSyncService.BuildDiagnosticsText();
 
         DiagnosticsText = string.Join(
             Environment.NewLine + Environment.NewLine,
@@ -631,6 +744,7 @@ public partial class MainWindowViewModel : ViewModelBase
                 FormatDiagnosticsSection("gamePath", currentPathState),
                 FormatDiagnosticsSection("autoDetect", autoDetectDiagnostics),
                 FormatDiagnosticsSection("activeSave", activeSaveDiagnostics),
+                FormatDiagnosticsSection("multiBase", multiBaseDiagnostics),
             ]);
 
         IsDiagnosticsVisible = true;
@@ -810,6 +924,7 @@ public partial class MainWindowViewModel : ViewModelBase
         _state.OverlayPort = NormalizeOverlayPort(port);
         _state.OverlayAutoStart = autoStart;
         _state.OverlayRotateSlides = rotateSlides;
+        MultiBaseApiUrlText = BuildMultiBaseApiUrl();
         _ = SaveStateAsync();
     }
 
@@ -848,6 +963,44 @@ public partial class MainWindowViewModel : ViewModelBase
         StatusMessage = L("All checklists have been reset.", "Alle Checklisten wurden zurückgesetzt.");
     }
 
+    [RelayCommand]
+    private async Task RenameSelectedBaseAsync()
+    {
+        if (SelectedTrackedBase is null)
+        {
+            StatusMessage = L("No base selected.", "Keine Basis ausgewählt.");
+            return;
+        }
+
+        var newName = (SelectedTrackedBaseName ?? string.Empty).Trim();
+        if (newName.Length == 0)
+        {
+            StatusMessage = L("Base name cannot be empty.", "Basisname darf nicht leer sein.");
+            return;
+        }
+
+        if (!_multiBaseSyncService.RenameBase(SelectedTrackedBase.BaseId, newName))
+        {
+            StatusMessage = L("Could not rename base.", "Basis konnte nicht umbenannt werden.");
+            return;
+        }
+
+        RefreshTrackedBasesUi();
+        _pendingMultiBaseRefresh = true;
+        await SaveStateAsync();
+        StatusMessage = Lf("Base renamed: {0}", "Basis umbenannt: {0}", newName);
+    }
+
+    [RelayCommand]
+    private async Task ClearTrackedBasesAsync()
+    {
+        _multiBaseSyncService.ClearActiveRun();
+        RefreshTrackedBasesUi();
+        _pendingMultiBaseRefresh = true;
+        await SaveStateAsync();
+        StatusMessage = L("Tracked bases for active run cleared.", "Erfasste Basen im aktiven Run gelöscht.");
+    }
+
     private async Task InitializeAsync()
     {
         _isInitializing = true;
@@ -858,6 +1011,8 @@ public partial class MainWindowViewModel : ViewModelBase
             _state.CurrentInventoryItemIds ??= [];
             _state.KnownCatalogItemIds ??= [];
             _state.TodoManualChecks ??= new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+            _state.TrackedBases ??= [];
+            _state.MultiBaseInventoryFullTypes ??= [];
             if (_state.InventoryDetectionVersion < CurrentInventoryDetectionVersion)
             {
                 _state.SeenInInventoryItemIds.Clear();
@@ -887,6 +1042,9 @@ public partial class MainWindowViewModel : ViewModelBase
                 : _state.RecipeStatusFilterKey.ToLowerInvariant();
             _state.OverlayPort = NormalizeOverlayPort(_state.OverlayPort);
             CompanionOverlayPage.ApplySettings(_state.OverlayPort, _state.OverlayAutoStart, _state.OverlayRotateSlides);
+            _multiBaseSyncService.LoadFromState(_state);
+            RefreshTrackedBasesUi();
+            MultiBaseApiUrlText = BuildMultiBaseApiUrl();
             ApplyUiLanguage();
             UpdateReleaseVersionText();
 
@@ -1014,16 +1172,33 @@ public partial class MainWindowViewModel : ViewModelBase
                 return;
             }
 
+            var multiBaseMatch = _multiBaseSyncService.BuildCatalogMatch(_catalogItems);
+            var inventoryBookIds = result.CheckedBookItemIds
+                .Concat(multiBaseMatch.InventoryBookItemIds)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            var inventoryMagazineIds = result.CheckedMagazineItemIds
+                .Concat(multiBaseMatch.InventoryMagazineItemIds)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
             ApplySessionStatuses(
-                result.CheckedBookItemIds,
+                inventoryBookIds,
                 result.ReadBookItemIds,
                 result.ObsoleteBookItemIds,
-                result.CheckedMagazineItemIds,
+                inventoryMagazineIds,
                 result.ReadMagazineItemIds,
                 result.LearnedRecipeItemIds,
-                result.SkillLevels);
+                result.SkillLevels,
+                multiBaseMatch.BaseBookItemIds,
+                multiBaseMatch.BaseMagazineItemIds,
+                multiBaseMatch.BaseRecipeItemIds,
+                multiBaseMatch.BaseNamesByBookItemId,
+                multiBaseMatch.BaseNamesByMagazineItemId,
+                multiBaseMatch.BaseNamesByRecipeItemId);
             ApplySessionSkills(result.SkillLevels);
             RefreshTodoAutoStates();
+            RefreshTrackedBasesUi();
             _lastObservedPlayersDbWriteUtc = ResolvePlayersDbLastWriteUtc(result.SavePath);
             _lastObservedGlobalModDataWriteUtc = ResolveGlobalModDataLastWriteUtc(result.SavePath);
             _lastObservedMapTimeWriteUtc = ResolveMapTimeLastWriteUtc(result.SavePath);
@@ -1073,7 +1248,13 @@ public partial class MainWindowViewModel : ViewModelBase
         IReadOnlyCollection<string> inventoryMagazineIds,
         IReadOnlyCollection<string> readMagazineIds,
         IReadOnlyCollection<string> learnedRecipeIds,
-        IReadOnlyCollection<SessionSkillLevel> skills)
+        IReadOnlyCollection<SessionSkillLevel> skills,
+        IReadOnlyCollection<string> baseBookIds,
+        IReadOnlyCollection<string> baseMagazineIds,
+        IReadOnlyCollection<string> baseRecipeIds,
+        IReadOnlyDictionary<string, IReadOnlyCollection<string>> baseNamesByBookId,
+        IReadOnlyDictionary<string, IReadOnlyCollection<string>> baseNamesByMagazineId,
+        IReadOnlyDictionary<string, IReadOnlyCollection<string>> baseNamesByRecipeId)
     {
         _suppressItemStateWrite = true;
         try
@@ -1089,6 +1270,7 @@ public partial class MainWindowViewModel : ViewModelBase
             foreach (var book in _bookItems)
             {
                 var inInventory = currentInventorySet.Contains(book.Id);
+                var inBase = baseBookIds.Contains(book.Id, StringComparer.OrdinalIgnoreCase);
                 var isObsolete = obsoleteBookIds.Contains(book.Id, StringComparer.OrdinalIgnoreCase);
 
                 if (inInventory && !_state.SeenInInventoryItemIds.Contains(book.Id, StringComparer.OrdinalIgnoreCase))
@@ -1106,12 +1288,15 @@ public partial class MainWindowViewModel : ViewModelBase
                 var hasActiveBoostWindow = skillLevel >= tierMin && skillLevel < tierMax;
                 var isReadWithActiveBoost = isRead && hasActiveBoostWindow;
 
-                var shouldCheck = isCurrentlyInInventory || seenInInventory || isReadWithActiveBoost || isObsolete;
+                var shouldCheck = isCurrentlyInInventory || inBase || seenInInventory || isReadWithActiveBoost || isObsolete;
+                var baseStateText = BuildBaseStateText(baseNamesByBookId, book.Id);
                 book.IsChecked = shouldCheck;
                 book.SessionStateKey = isObsolete
                     ? "obsolete"
                     : isCurrentlyInInventory
                         ? "in_inventory"
+                        : inBase
+                            ? "in_base"
                         : isReadWithActiveBoost
                             ? "read"
                             : seenInInventory
@@ -1121,6 +1306,8 @@ public partial class MainWindowViewModel : ViewModelBase
                     ? L("No Longer Needed (skill level too high)", "Nicht mehr benötigt (Skill-Stufe zu hoch)")
                     : isCurrentlyInInventory
                         ? L("In Inventory", "Im Inventar")
+                        : inBase
+                            ? baseStateText
                         : isReadWithActiveBoost
                             ? L("Read", "Gelesen")
                             : seenInInventory
@@ -1140,18 +1327,24 @@ public partial class MainWindowViewModel : ViewModelBase
             foreach (var magazine in _magazineItems)
             {
                 var inInventory = inventoryMagazineIds.Contains(magazine.Id, StringComparer.OrdinalIgnoreCase);
+                var inBase = baseMagazineIds.Contains(magazine.Id, StringComparer.OrdinalIgnoreCase);
                 var isRead = readMagazineIds.Contains(magazine.Id, StringComparer.OrdinalIgnoreCase);
-                var shouldCheck = inInventory || isRead;
+                var shouldCheck = inInventory || inBase || isRead;
+                var baseStateText = BuildBaseStateText(baseNamesByMagazineId, magazine.Id);
                 magazine.IsChecked = shouldCheck;
                 magazine.SessionStateKey = isRead
                     ? "read"
                     : inInventory
                         ? "in_inventory"
+                        : inBase
+                            ? "in_base"
                         : "open";
                 magazine.SessionState = isRead
                     ? L("Read", "Gelesen")
                     : inInventory
                         ? L("In Inventory", "Im Inventar")
+                        : inBase
+                            ? baseStateText
                         : L("Open", "Noch offen");
 
                 if (shouldCheck)
@@ -1167,9 +1360,19 @@ public partial class MainWindowViewModel : ViewModelBase
             foreach (var recipe in _recipeItems)
             {
                 var learned = learnedRecipeIds.Contains(recipe.Id, StringComparer.OrdinalIgnoreCase);
+                var inBase = baseRecipeIds.Contains(recipe.Id, StringComparer.OrdinalIgnoreCase);
+                var baseStateText = BuildBaseStateText(baseNamesByRecipeId, recipe.Id);
                 recipe.IsChecked = learned;
-                recipe.SessionStateKey = learned ? "learned" : "open";
-                recipe.SessionState = learned ? L("Learned", "Gelernt") : L("Open", "Noch offen");
+                recipe.SessionStateKey = learned
+                    ? "learned"
+                    : inBase
+                        ? "in_base"
+                        : "open";
+                recipe.SessionState = learned
+                    ? L("Learned", "Gelernt")
+                    : inBase
+                        ? baseStateText
+                        : L("Open", "Noch offen");
 
                 if (learned)
                 {
@@ -1204,6 +1407,206 @@ public partial class MainWindowViewModel : ViewModelBase
         }
 
         SessionSkillsHeader = Lf("Session Skills ({0})", "Session-Skills ({0})", SessionSkills.Count);
+    }
+
+    private string BuildBaseStateText(
+        IReadOnlyDictionary<string, IReadOnlyCollection<string>> baseNamesByItemId,
+        string itemId)
+    {
+        if (!baseNamesByItemId.TryGetValue(itemId, out var origins) || origins.Count == 0)
+        {
+            return L("In Base", "In Basis");
+        }
+
+        var firstTwo = origins
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(2)
+            .ToArray();
+
+        if (firstTwo.Length == 0)
+        {
+            return L("In Base", "In Basis");
+        }
+
+        if (firstTwo.Length == 1)
+        {
+            return Lf("In Base: {0}", "In Basis: {0}", firstTwo[0]);
+        }
+
+        return Lf("In Base: {0} +{1}", "In Basis: {0} +{1}", firstTwo[0], origins.Count - 1);
+    }
+
+    private void RefreshSelectedBaseDetails()
+    {
+        var selectedBaseId = SelectedTrackedBase?.BaseId?.Trim() ?? string.Empty;
+        if (selectedBaseId.Length == 0)
+        {
+            ReplaceCollection(SelectedBaseBooks, Array.Empty<ChecklistItemViewModel>());
+            ReplaceCollection(SelectedBaseMagazines, Array.Empty<ChecklistItemViewModel>());
+            ReplaceCollection(SelectedBaseRecipes, Array.Empty<ChecklistItemViewModel>());
+            ReplaceCollection(SelectedBaseStructures, Array.Empty<string>());
+            SelectedBaseSummaryText = L("No base selected.", "Keine Basis ausgewählt.");
+            return;
+        }
+
+        var snapshot = _multiBaseSyncService.GetStateSnapshot();
+        var baseState = snapshot.Bases.FirstOrDefault(entry =>
+            entry.BaseId.Equals(selectedBaseId, StringComparison.OrdinalIgnoreCase));
+        if (baseState is null)
+        {
+            ReplaceCollection(SelectedBaseBooks, Array.Empty<ChecklistItemViewModel>());
+            ReplaceCollection(SelectedBaseMagazines, Array.Empty<ChecklistItemViewModel>());
+            ReplaceCollection(SelectedBaseRecipes, Array.Empty<ChecklistItemViewModel>());
+            ReplaceCollection(SelectedBaseStructures, Array.Empty<string>());
+            SelectedBaseSummaryText = L("Selected base has no snapshot yet.", "Ausgewählte Basis hat noch keinen Snapshot.");
+            return;
+        }
+
+        var normalizedBaseTokens = baseState.ItemFullTypes
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var catalogById = _catalogItems
+            .ToDictionary(item => item.Id, StringComparer.OrdinalIgnoreCase);
+        var bookIdsInBase = _catalogItems
+            .Where(item => item.Type == GuideItemType.Book && MatchesGuideItemByTokens(item, normalizedBaseTokens))
+            .Select(item => item.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var magazineIdsInBase = _catalogItems
+            .Where(item => item.Type == GuideItemType.Magazine && MatchesGuideItemByTokens(item, normalizedBaseTokens))
+            .Select(item => item.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var recipeTokens = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var magazineId in magazineIdsInBase)
+        {
+            if (!catalogById.TryGetValue(magazineId, out var magazine))
+            {
+                continue;
+            }
+
+            foreach (var recipe in magazine.Recipes)
+            {
+                AddNormalizedToken(recipeTokens, recipe);
+            }
+        }
+
+        var recipeIdsInBase = _catalogItems
+            .Where(item => item.Type == GuideItemType.Recipe && MatchesGuideItemByTokens(item, recipeTokens))
+            .Select(item => item.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        ReplaceCollection(
+            SelectedBaseBooks,
+            _bookItems
+                .Where(item => bookIdsInBase.Contains(item.Id))
+                .OrderBy(item => item.Category, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(item => item.Level <= 0 ? int.MaxValue : item.Level)
+                .ThenBy(item => item.Name, StringComparer.OrdinalIgnoreCase));
+        ReplaceCollection(
+            SelectedBaseMagazines,
+            _magazineItems
+                .Where(item => magazineIdsInBase.Contains(item.Id))
+                .OrderBy(item => item.Category, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(item => item.Name, StringComparer.OrdinalIgnoreCase));
+        ReplaceCollection(
+            SelectedBaseRecipes,
+            _recipeItems
+                .Where(item => recipeIdsInBase.Contains(item.Id))
+                .OrderBy(item => item.Name, StringComparer.OrdinalIgnoreCase));
+        ReplaceCollection(
+            SelectedBaseStructures,
+            baseState.StructureTypes
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .OrderBy(value => value, StringComparer.OrdinalIgnoreCase));
+
+        var lastSeenText = baseState.LastSeenUtc == DateTimeOffset.MinValue
+            ? L("n/a", "k. A.")
+            : baseState.LastSeenUtc.ToLocalTime().ToString("dd.MM.yyyy HH:mm:ss", CultureInfo.CurrentCulture);
+        SelectedBaseSummaryText = Lf(
+            "Items: {0} | Books: {1} | Magazines: {2} | Recipes: {3} | Structures: {4} | Last seen: {5}",
+            "Items: {0} | Bücher: {1} | Magazine: {2} | Rezepte: {3} | Strukturen: {4} | Zuletzt gesehen: {5}",
+            baseState.ItemFullTypes.Count,
+            SelectedBaseBooks.Count,
+            SelectedBaseMagazines.Count,
+            SelectedBaseRecipes.Count,
+            SelectedBaseStructures.Count,
+            lastSeenText);
+    }
+
+    private static bool MatchesGuideItemByTokens(GuideItem item, IReadOnlySet<string> normalizedTokens)
+    {
+        if (normalizedTokens.Count == 0)
+        {
+            return false;
+        }
+
+        foreach (var candidate in BuildGuideItemTokenCandidates(item))
+        {
+            if (normalizedTokens.Contains(candidate))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static IEnumerable<string> BuildGuideItemTokenCandidates(GuideItem item)
+    {
+        var candidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        AddNormalizedToken(candidates, item.Id);
+        AddNormalizedToken(candidates, item.Name);
+        AddNormalizedToken(candidates, item.GermanName);
+
+        foreach (var alias in item.Aliases)
+        {
+            AddNormalizedToken(candidates, alias);
+        }
+
+        return candidates;
+    }
+
+    private static void AddNormalizedToken(ISet<string> target, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        var normalized = NormalizeToken(value);
+        if (normalized.Length == 0)
+        {
+            return;
+        }
+
+        target.Add(normalized);
+
+        var raw = value.Trim().Replace(':', '.');
+        var separator = raw.LastIndexOf('.');
+        if (separator > 0 && separator < raw.Length - 1)
+        {
+            var trailing = NormalizeToken(raw[(separator + 1)..]);
+            if (trailing.Length > 0)
+            {
+                target.Add(trailing);
+            }
+        }
+    }
+
+    private static string NormalizeToken(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var normalized = value.Trim().Replace(':', '.');
+        var chars = normalized
+            .ToLowerInvariant()
+            .Where(char.IsLetterOrDigit)
+            .ToArray();
+        return new string(chars);
     }
 
     private void RebuildItems(GuideCatalog catalog)
@@ -1244,6 +1647,7 @@ public partial class MainWindowViewModel : ViewModelBase
         ApplyFilters();
         UpdateProgress();
         RebuildTodoPlan();
+        RefreshSelectedBaseDetails();
     }
 
     private void ApplyFilters()
@@ -1341,6 +1745,7 @@ public partial class MainWindowViewModel : ViewModelBase
             "all" => true,
             "open" => string.IsNullOrWhiteSpace(stateKey) || stateKey == "open",
             "in_inventory" => stateKey == "in_inventory",
+            "in_base" => stateKey == "in_base",
             "seen_inventory" => stateKey == "seen_inventory",
             "read" => stateKey == "read",
             "obsolete" => stateKey == "obsolete",
@@ -1371,6 +1776,12 @@ public partial class MainWindowViewModel : ViewModelBase
             return "seen_inventory";
         }
 
+        if (state.StartsWith("In Base", StringComparison.OrdinalIgnoreCase) ||
+            state.StartsWith("In Basis", StringComparison.OrdinalIgnoreCase))
+        {
+            return "in_base";
+        }
+
         if (state.StartsWith("No Longer Needed", StringComparison.OrdinalIgnoreCase) ||
             state.StartsWith("Nicht mehr", StringComparison.OrdinalIgnoreCase))
         {
@@ -1398,9 +1809,9 @@ public partial class MainWindowViewModel : ViewModelBase
         return string.Empty;
     }
 
-    private static void ReplaceCollection(
-        ICollection<ChecklistItemViewModel> target,
-        IEnumerable<ChecklistItemViewModel> source)
+    private static void ReplaceCollection<T>(
+        ICollection<T> target,
+        IEnumerable<T> source)
     {
         target.Clear();
         foreach (var item in source)
@@ -2403,19 +2814,373 @@ public partial class MainWindowViewModel : ViewModelBase
         return Lf("Signals: {0}", "Signale: {0}", string.Join(", ", notes));
     }
 
+    private LocalHttpServer.ApiResponse? HandleServerApiRequest(LocalHttpServer.ApiRequest request)
+    {
+        if (!request.Path.Equals("/api/multi-base/scan", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        if (!request.Method.Equals("POST", StringComparison.OrdinalIgnoreCase))
+        {
+            return new LocalHttpServer.ApiResponse
+            {
+                StatusCode = 405,
+                ReasonPhrase = "Method Not Allowed",
+                Body = "{\"ok\":false,\"message\":\"method_not_allowed\"}",
+            };
+        }
+
+        var result = _multiBaseSyncService.IngestScanJson(request.Body);
+        _ = Dispatcher.UIThread.InvokeAsync(async () =>
+        {
+            RefreshMultiBaseConnectionUi(DateTimeOffset.UtcNow);
+            RefreshTrackedBasesUi();
+            _pendingMultiBaseRefresh = true;
+            _lastLiveTelemetrySyncAt = DateTimeOffset.MinValue;
+            await SaveStateAsync();
+        });
+
+        var responseBody = JsonSerializer.Serialize(new
+        {
+            ok = result.Success,
+            message = result.Message,
+            runKey = result.RunKey,
+            baseId = result.BaseId,
+            baseName = result.BaseName,
+            inventoryItemCount = result.InventoryItemCount,
+            baseItemCount = result.BaseItemCount,
+            structureCount = result.StructureCount,
+            timestampUtc = result.TimestampUtc == default ? string.Empty : result.TimestampUtc.ToString("O", CultureInfo.InvariantCulture),
+        });
+
+        return new LocalHttpServer.ApiResponse
+        {
+            StatusCode = result.Success ? 200 : 400,
+            ReasonPhrase = result.Success ? "OK" : "Bad Request",
+            ContentType = "application/json; charset=utf-8",
+            Body = responseBody,
+        };
+    }
+
+    private void RefreshTrackedBasesUi()
+    {
+        var snapshot = _multiBaseSyncService.GetStateSnapshot();
+        if (snapshot.LastSnapshotUtc > _lastMultiBasePostUtc)
+        {
+            _lastMultiBasePostUtc = snapshot.LastSnapshotUtc;
+        }
+
+        var entries = snapshot.Bases
+            .Select(baseState => new TrackedBaseOptionViewModel
+            {
+                BaseId = baseState.BaseId,
+                BaseName = baseState.BaseName,
+                BuildingId = baseState.BuildingId,
+                LastSeenUtc = baseState.LastSeenUtc,
+                ItemCount = baseState.ItemFullTypes.Count,
+                StructureCount = baseState.StructureTypes.Count,
+            })
+            .OrderBy(entry => entry.BaseName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(entry => entry.BaseId, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var selectedId = SelectedTrackedBase?.BaseId ?? string.Empty;
+        TrackedBases.Clear();
+        foreach (var entry in entries)
+        {
+            TrackedBases.Add(entry);
+        }
+
+        SelectedTrackedBase = entries.FirstOrDefault(entry =>
+            entry.BaseId.Equals(selectedId, StringComparison.OrdinalIgnoreCase));
+
+        if (SelectedTrackedBase is null && entries.Count > 0)
+        {
+            SelectedTrackedBase = entries[0];
+        }
+
+        var lastSeenText = snapshot.LastSnapshotUtc == DateTimeOffset.MinValue
+            ? L("n/a", "k. A.")
+            : snapshot.LastSnapshotUtc.ToLocalTime().ToString("dd.MM.yyyy HH:mm:ss", CultureInfo.CurrentCulture);
+        MultiBaseStatusText = Lf(
+            "Run: {0} | Bases: {1} | Inventory tokens: {2} | Last seen: {3}",
+            "Run: {0} | Basen: {1} | Inventar-Tokens: {2} | Zuletzt gesehen: {3}",
+            string.IsNullOrWhiteSpace(snapshot.RunKey) ? "-" : snapshot.RunKey,
+            entries.Count,
+            snapshot.InventoryItemTokenCount,
+            lastSeenText);
+        RefreshMultiBaseConnectionUi();
+        RefreshSelectedBaseDetails();
+    }
+
+    private void RefreshMultiBaseConnectionUi(DateTimeOffset? lastPostUtc = null)
+    {
+        if (lastPostUtc.HasValue && lastPostUtc.Value > _lastMultiBasePostUtc)
+        {
+            _lastMultiBasePostUtc = lastPostUtc.Value;
+        }
+
+        var hasPost = _lastMultiBasePostUtc != DateTimeOffset.MinValue;
+        var isConnected = hasPost && (DateTimeOffset.UtcNow - _lastMultiBasePostUtc) <= TimeSpan.FromSeconds(12);
+        MultiBaseConnected = isConnected;
+        MultiBaseConnectionText = isConnected
+            ? L("Connected", "Verbunden")
+            : L("Disconnected", "Getrennt");
+        MultiBaseLastPostText = hasPost
+            ? Lf(
+                "Last POST: {0:dd.MM.yyyy HH:mm:ss}",
+                "Letzter POST: {0:dd.MM.yyyy HH:mm:ss}",
+                _lastMultiBasePostUtc.ToLocalTime())
+            : L("No mod POST yet.", "Noch kein Mod-POST.");
+    }
+
+    private string BuildMultiBaseApiUrl()
+    {
+        var port = _state.OverlayPort is >= 1 and <= 65535
+            ? _state.OverlayPort
+            : 8765;
+        var host = LocalHttpServer.ResolvePreferredHostAddress();
+        return $"http://{host}:{port}/api/multi-base/scan";
+    }
+
+    private void IngestQueuedMultiBaseSnapshots()
+    {
+        var queuePath = ResolveMultiBaseQueuePath();
+        if (string.IsNullOrWhiteSpace(queuePath))
+        {
+            return;
+        }
+
+        if (!queuePath.Equals(_multiBaseQueuePath, StringComparison.OrdinalIgnoreCase))
+        {
+            _multiBaseQueuePath = queuePath;
+            _multiBaseQueueReadOffset = 0;
+            _multiBaseQueueRemainder = string.Empty;
+            _multiBaseQueueLastWriteUtc = DateTime.MinValue;
+        }
+
+        if (!File.Exists(queuePath))
+        {
+            return;
+        }
+
+        FileInfo fileInfo;
+        try
+        {
+            fileInfo = new FileInfo(queuePath);
+        }
+        catch
+        {
+            return;
+        }
+
+        if (_multiBaseQueueReadOffset > fileInfo.Length)
+        {
+            _multiBaseQueueReadOffset = 0;
+            _multiBaseQueueRemainder = string.Empty;
+        }
+
+        if (_multiBaseQueueReadOffset == fileInfo.Length &&
+            fileInfo.LastWriteTimeUtc <= _multiBaseQueueLastWriteUtc)
+        {
+            return;
+        }
+
+        string chunk;
+        try
+        {
+            using var stream = new FileStream(queuePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            if (_multiBaseQueueReadOffset > stream.Length)
+            {
+                _multiBaseQueueReadOffset = 0;
+                _multiBaseQueueRemainder = string.Empty;
+            }
+
+            stream.Seek(_multiBaseQueueReadOffset, SeekOrigin.Begin);
+            using var buffer = new MemoryStream();
+            stream.CopyTo(buffer);
+            _multiBaseQueueReadOffset = stream.Position;
+            _multiBaseQueueLastWriteUtc = fileInfo.LastWriteTimeUtc;
+            chunk = Encoding.UTF8.GetString(buffer.ToArray());
+        }
+        catch
+        {
+            return;
+        }
+
+        if (chunk.Length == 0 && _multiBaseQueueRemainder.Length == 0)
+        {
+            return;
+        }
+
+        var combined = _multiBaseQueueRemainder + chunk;
+        var lines = combined.Split('\n');
+        var hasTrailingNewline = combined.EndsWith('\n');
+        var processCount = hasTrailingNewline ? lines.Length : lines.Length - 1;
+        _multiBaseQueueRemainder = hasTrailingNewline || lines.Length == 0
+            ? string.Empty
+            : lines[^1];
+
+        var acceptedCount = 0;
+        var latestAcceptedUtc = DateTimeOffset.MinValue;
+
+        for (var index = 0; index < processCount; index++)
+        {
+            var line = lines[index].Trim();
+            if (line.Length == 0)
+            {
+                continue;
+            }
+
+            var result = _multiBaseSyncService.IngestScanJson(line);
+            if (!result.Success)
+            {
+                continue;
+            }
+
+            acceptedCount++;
+            if (result.TimestampUtc > latestAcceptedUtc)
+            {
+                latestAcceptedUtc = result.TimestampUtc;
+            }
+        }
+
+        TryCompactMultiBaseQueue(queuePath, fileInfo.Length, fileInfo.LastWriteTimeUtc);
+
+        if (acceptedCount <= 0)
+        {
+            return;
+        }
+
+        RefreshMultiBaseConnectionUi(
+            latestAcceptedUtc == DateTimeOffset.MinValue
+                ? DateTimeOffset.UtcNow
+                : latestAcceptedUtc);
+        RefreshTrackedBasesUi();
+        _pendingMultiBaseRefresh = true;
+        _lastLiveTelemetrySyncAt = DateTimeOffset.MinValue;
+        _ = SaveStateAsync();
+    }
+
+    private void TryCompactMultiBaseQueue(string queuePath, long observedLength, DateTime observedLastWriteUtc)
+    {
+        if (observedLength < MultiBaseQueueCompactThresholdBytes ||
+            _multiBaseQueueRemainder.Length > 0 ||
+            _multiBaseQueueReadOffset < observedLength ||
+            string.IsNullOrWhiteSpace(queuePath))
+        {
+            return;
+        }
+
+        try
+        {
+            using var stream = new FileStream(queuePath, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite);
+            if (stream.Length < MultiBaseQueueCompactThresholdBytes ||
+                stream.Length != observedLength)
+            {
+                return;
+            }
+
+            var currentLastWriteUtc = File.GetLastWriteTimeUtc(queuePath);
+            if (currentLastWriteUtc > observedLastWriteUtc)
+            {
+                return;
+            }
+
+            stream.SetLength(0);
+            _multiBaseQueueReadOffset = 0;
+            _multiBaseQueueRemainder = string.Empty;
+            _multiBaseQueueLastWriteUtc = File.GetLastWriteTimeUtc(queuePath);
+        }
+        catch
+        {
+            // Best effort compaction; ignore transient file sharing failures.
+        }
+    }
+
+    private string ResolveMultiBaseQueuePath()
+    {
+        var candidates = new List<string>();
+
+        static void AddQueueCandidates(List<string> target, string? rootPath)
+        {
+            if (string.IsNullOrWhiteSpace(rootPath))
+            {
+                return;
+            }
+
+            foreach (var relativePath in MultiBaseQueueRelativePaths)
+            {
+                target.Add(Path.Combine(rootPath, relativePath));
+            }
+        }
+
+        var activeSavePath = _sessionSyncService.TryResolveActiveSavePathForCurrentSession();
+        var cacheRootFromSave = TryResolveZomboidCacheRootFromSavePath(activeSavePath);
+        AddQueueCandidates(candidates, cacheRootFromSave);
+
+        var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (!string.IsNullOrWhiteSpace(userProfile))
+        {
+            AddQueueCandidates(candidates, Path.Combine(userProfile, "Zomboid"));
+            AddQueueCandidates(candidates, Path.Combine(userProfile, "Zomboid41"));
+        }
+
+        var existing = candidates
+            .Where(File.Exists)
+            .OrderByDescending(path => File.GetLastWriteTimeUtc(path))
+            .FirstOrDefault();
+        if (!string.IsNullOrWhiteSpace(existing))
+        {
+            return existing;
+        }
+
+        return candidates.FirstOrDefault() ?? string.Empty;
+    }
+
+    private static string TryResolveZomboidCacheRootFromSavePath(string? savePath)
+    {
+        if (string.IsNullOrWhiteSpace(savePath))
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            var directory = new DirectoryInfo(savePath);
+            while (directory is not null &&
+                   !directory.Name.Equals("Saves", StringComparison.OrdinalIgnoreCase))
+            {
+                directory = directory.Parent;
+            }
+
+            return directory?.Parent?.FullName ?? string.Empty;
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
     private async void SessionTimerOnTick(object? sender, EventArgs eventArgs)
     {
+        IngestQueuedMultiBaseSnapshots();
+        RefreshMultiBaseConnectionUi();
+
         if (IsBusy || _catalogItems.Count == 0)
         {
             return;
         }
 
-        var forceSync = DateTimeOffset.UtcNow - _lastLiveTelemetrySyncAt >= TimeSpan.FromSeconds(3);
+        var forceSync = _pendingMultiBaseRefresh ||
+                        DateTimeOffset.UtcNow - _lastLiveTelemetrySyncAt >= TimeSpan.FromSeconds(3);
         if (!forceSync && !HasSessionDataChangedSinceLastSync())
         {
             return;
         }
 
+        _pendingMultiBaseRefresh = false;
         ConfigureSessionWatcher();
         await SyncSessionAsync(isManual: false);
     }
@@ -2724,6 +3489,7 @@ public partial class MainWindowViewModel : ViewModelBase
                     ("all", L("All", "Alle")),
                     ("open", L("Open", "Offen")),
                     ("in_inventory", L("In Inventory", "Im Inventar")),
+                    ("in_base", L("In Base", "In Basis")),
                     ("seen_inventory", L("Seen In Inventory", "War im Inventar")),
                     ("read", L("Read", "Gelesen")),
                     ("obsolete", L("No Longer Needed", "Nicht mehr benötigt")),
@@ -2736,6 +3502,7 @@ public partial class MainWindowViewModel : ViewModelBase
                     ("all", L("All", "Alle")),
                     ("open", L("Open", "Offen")),
                     ("in_inventory", L("In Inventory", "Im Inventar")),
+                    ("in_base", L("In Base", "In Basis")),
                     ("read", L("Read", "Gelesen")),
                     ("checked", L("Checked", "Abgehakt")),
                     ("unchecked", L("Unchecked", "Nicht abgehakt"))));
@@ -2745,6 +3512,7 @@ public partial class MainWindowViewModel : ViewModelBase
                 CreateStatusFilterOptions(
                     ("all", L("All", "Alle")),
                     ("open", L("Open", "Offen")),
+                    ("in_base", L("In Base", "In Basis")),
                     ("learned", L("Learned", "Gelernt")),
                     ("checked", L("Checked", "Abgehakt")),
                     ("unchecked", L("Unchecked", "Nicht abgehakt"))));
@@ -2835,6 +3603,15 @@ public partial class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(BookFilterLabelText));
         OnPropertyChanged(nameof(MagazineFilterLabelText));
         OnPropertyChanged(nameof(RecipeFilterLabelText));
+        OnPropertyChanged(nameof(MultiBaseSectionTitleText));
+        OnPropertyChanged(nameof(MultiBaseApiUrlLabelText));
+        OnPropertyChanged(nameof(MultiBaseStatusLabelText));
+        OnPropertyChanged(nameof(MultiBaseBasesLabelText));
+        OnPropertyChanged(nameof(MultiBaseBaseNameLabelText));
+        OnPropertyChanged(nameof(MultiBaseConnectionLabelText));
+        OnPropertyChanged(nameof(MultiBaseLastPostLabelText));
+        OnPropertyChanged(nameof(MultiBaseRenameButtonText));
+        OnPropertyChanged(nameof(MultiBaseClearButtonText));
         OnPropertyChanged(nameof(DiagnosticsDialogTitleText));
         OnPropertyChanged(nameof(CloseDiagnosticsButtonText));
         OnPropertyChanged(nameof(TodoSubtitleText));
@@ -2843,7 +3620,15 @@ public partial class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(BooksTabHeader));
         OnPropertyChanged(nameof(MagazinesTabHeader));
         OnPropertyChanged(nameof(RecipesTabHeader));
+        OnPropertyChanged(nameof(BasesTabHeaderText));
         OnPropertyChanged(nameof(TodoTabHeader));
+        OnPropertyChanged(nameof(BaseSelectLabelText));
+        OnPropertyChanged(nameof(BaseSummaryLabelText));
+        OnPropertyChanged(nameof(BaseStructuresLabelText));
+        OnPropertyChanged(nameof(BaseBooksLabelText));
+        OnPropertyChanged(nameof(BaseMagazinesLabelText));
+        OnPropertyChanged(nameof(BaseRecipesLabelText));
+        RefreshTrackedBasesUi();
         RebuildTodoPlan();
         UpdateReleaseVersionText();
     }
@@ -2971,6 +3756,7 @@ public partial class MainWindowViewModel : ViewModelBase
                 .Where(entry => entry.Value && !string.IsNullOrWhiteSpace(entry.Key))
                 .ToDictionary(entry => entry.Key, entry => true, StringComparer.OrdinalIgnoreCase);
             _state.OverlayPort = NormalizeOverlayPort(_state.OverlayPort);
+            _multiBaseSyncService.SaveToState(_state);
             await _appStateService.SaveAsync(_state);
         }
         catch

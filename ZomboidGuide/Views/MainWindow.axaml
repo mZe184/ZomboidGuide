@@ -81,6 +81,33 @@
             </Border>
         </DataTemplate>
 
+        <DataTemplate x:Key="BaseChecklistItemTemplate"
+                      x:DataType="vm:ChecklistItemViewModel">
+            <Border Classes="item-card"
+                    HorizontalAlignment="Stretch">
+                <Grid RowDefinitions="Auto,Auto,Auto"
+                      ColumnDefinitions="*,Auto">
+                    <TextBlock Classes="item-title"
+                               Text="{Binding DisplayName}"/>
+                    <Border Grid.Column="1"
+                            Classes="state-badge"
+                            Background="{Binding SessionBadgeBrush}"
+                            IsVisible="{Binding HasSessionState}">
+                        <TextBlock Classes="state-badge-text"
+                                   Text="{Binding SessionBadgeText}"/>
+                    </Border>
+                    <TextBlock Grid.Row="1"
+                               Grid.ColumnSpan="2"
+                               Classes="caption"
+                               Text="{Binding Detail}"/>
+                    <TextBlock Grid.Row="2"
+                               Grid.ColumnSpan="2"
+                               Classes="caption"
+                               Text="{Binding Source}"/>
+                </Grid>
+            </Border>
+        </DataTemplate>
+
         <DataTemplate x:Key="BookGroupTemplate"
                       x:DataType="vm:BookCategoryGroupViewModel">
             <Border Classes="category-panel"
@@ -119,6 +146,11 @@
 
         <DataTemplate x:Key="StatusFilterOptionTemplate"
                       x:DataType="vm:StatusFilterOptionViewModel">
+            <TextBlock Text="{Binding Display}"/>
+        </DataTemplate>
+
+        <DataTemplate x:Key="TrackedBaseOptionTemplate"
+                      x:DataType="vm:TrackedBaseOptionViewModel">
             <TextBlock Text="{Binding Display}"/>
         </DataTemplate>
 
@@ -352,6 +384,60 @@
                     <ScrollViewer Margin="2">
                         <ItemsControl ItemTemplate="{StaticResource ChecklistItemTemplate}"
                                       ItemsSource="{Binding FilteredRecipes}"/>
+                    </ScrollViewer>
+                </TabItem>
+
+                <TabItem>
+                    <TabItem.Header>
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <material:MaterialIcon Kind="HomeCity" Width="16" Height="16"/>
+                            <TextBlock Classes="tab-title"
+                                       VerticalAlignment="Center"
+                                       Text="{Binding BasesTabHeaderText}"/>
+                        </StackPanel>
+                    </TabItem.Header>
+                    <ScrollViewer Margin="2"
+                                  HorizontalScrollBarVisibility="Disabled"
+                                  VerticalScrollBarVisibility="Auto">
+                        <StackPanel Spacing="8">
+                            <TextBlock Classes="caption"
+                                       Text="{Binding BaseSelectLabelText}"/>
+                            <ComboBox ItemTemplate="{StaticResource TrackedBaseOptionTemplate}"
+                                      ItemsSource="{Binding TrackedBases}"
+                                      SelectedItem="{Binding SelectedTrackedBase, Mode=TwoWay}"/>
+
+                            <TextBlock Classes="caption"
+                                       Text="{Binding BaseSummaryLabelText}"/>
+                            <TextBlock TextWrapping="Wrap"
+                                       Text="{Binding SelectedBaseSummaryText}"/>
+
+                            <TextBlock Classes="caption"
+                                       Text="{Binding BaseStructuresLabelText}"/>
+                            <ItemsControl ItemsSource="{Binding SelectedBaseStructures}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Classes="item-card">
+                                            <TextBlock Text="{Binding}"/>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <TextBlock Classes="caption"
+                                       Text="{Binding BaseBooksLabelText}"/>
+                            <ItemsControl ItemTemplate="{StaticResource BaseChecklistItemTemplate}"
+                                          ItemsSource="{Binding SelectedBaseBooks}"/>
+
+                            <TextBlock Classes="caption"
+                                       Text="{Binding BaseMagazinesLabelText}"/>
+                            <ItemsControl ItemTemplate="{StaticResource BaseChecklistItemTemplate}"
+                                          ItemsSource="{Binding SelectedBaseMagazines}"/>
+
+                            <TextBlock Classes="caption"
+                                       Text="{Binding BaseRecipesLabelText}"/>
+                            <ItemsControl ItemTemplate="{StaticResource BaseChecklistItemTemplate}"
+                                          ItemsSource="{Binding SelectedBaseRecipes}"/>
+                        </StackPanel>
                     </ScrollViewer>
                 </TabItem>
 
@@ -666,6 +752,50 @@
                                         <ToggleSwitch OffContent="{Binding RiskAlertSoundsOffText}"
                                                       OnContent="{Binding RiskAlertSoundsOnText}"
                                                       IsChecked="{Binding RiskAlertSoundsEnabled, Mode=TwoWay}"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Classes="item-card"
+                                        Padding="10">
+                                    <StackPanel Spacing="8">
+                                        <TextBlock Classes="item-title"
+                                                   Text="{Binding MultiBaseSectionTitleText}"/>
+                                        <TextBlock Classes="caption"
+                                                   Text="{Binding MultiBaseApiUrlLabelText}"/>
+                                        <TextBox IsReadOnly="True"
+                                                 Text="{Binding MultiBaseApiUrlText}"/>
+                                        <TextBlock Classes="caption"
+                                                   Text="{Binding MultiBaseConnectionLabelText}"/>
+                                        <Border Classes="state-badge"
+                                                HorizontalAlignment="Left"
+                                                Margin="0,0,0,0"
+                                                Background="{Binding MultiBaseConnectionBadgeBrush}">
+                                            <TextBlock Classes="state-badge-text"
+                                                       Text="{Binding MultiBaseConnectionText}"/>
+                                        </Border>
+                                        <TextBlock Classes="caption"
+                                                   Text="{Binding MultiBaseLastPostLabelText}"/>
+                                        <TextBlock Text="{Binding MultiBaseLastPostText}"/>
+                                        <TextBlock Classes="caption"
+                                                   Text="{Binding MultiBaseStatusLabelText}"/>
+                                        <TextBlock TextWrapping="Wrap"
+                                                   Text="{Binding MultiBaseStatusText}"/>
+                                        <TextBlock Classes="caption"
+                                                   Text="{Binding MultiBaseBasesLabelText}"/>
+                                        <ComboBox ItemTemplate="{StaticResource TrackedBaseOptionTemplate}"
+                                                  ItemsSource="{Binding TrackedBases}"
+                                                  SelectedItem="{Binding SelectedTrackedBase, Mode=TwoWay}"/>
+                                        <TextBlock Classes="caption"
+                                                   Text="{Binding MultiBaseBaseNameLabelText}"/>
+                                        <TextBox Text="{Binding SelectedTrackedBaseName, Mode=TwoWay}"/>
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <Button Command="{Binding RenameSelectedBaseCommand}">
+                                                <TextBlock Text="{Binding MultiBaseRenameButtonText}"/>
+                                            </Button>
+                                            <Button Command="{Binding ClearTrackedBasesCommand}">
+                                                <TextBlock Text="{Binding MultiBaseClearButtonText}"/>
+                                            </Button>
+                                        </StackPanel>
                                     </StackPanel>
                                 </Border>
 
